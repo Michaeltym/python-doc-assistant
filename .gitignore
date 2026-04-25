@@ -1,0 +1,21 @@
+# Personal Claude instructions
+CLAUDE.local.md
+.claude
+
+# Planning-with-files plugin (ephemeral)
+task_plan.md
+findings.md
+progress.md
+
+# Data artifacts (per AGENTS.md / PLAN.md)
+data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tmp/
+
+# OS
+.DS_Store
