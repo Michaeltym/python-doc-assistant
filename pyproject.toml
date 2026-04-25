@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy"]
+dev = ["pytest", "ruff", "mypy", "ipython", "types-requests"]
 ingest = ["beautifulsoup4", "lxml", "sphobjinv", "requests"]
 retrieval = ["rank-bm25", "numpy", "rapidfuzz"]
 
@@ -38,3 +38,8 @@ files = ["src", "tests"]
 
 [tool.pytest.ini_options]                                                                                    
 testpaths = ["tests"]    
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
