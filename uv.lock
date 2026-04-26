@@ -728,6 +728,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "rapidfuzz" },
 ]
 
 [package.optional-dependencies]
@@ -765,6 +766,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'retrieval'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "rank-bm25", marker = "extra == 'retrieval'" },
+    { name = "rapidfuzz", specifier = ">=3.14.5" },
     { name = "rapidfuzz", marker = "extra == 'retrieval'" },
     { name = "requests", marker = "extra == 'ingest'" },
     { name = "ruff", marker = "extra == 'dev'" },
