@@ -56,13 +56,22 @@ SYSTEM_GROUNDING: Final[str] = (
 )
 SYSTEM_CITATIONS: Final[str] = (
     "When you reference a chunk in your answer, cite it inline using the "
-    "format [#chunk_id], where chunk_id is the marker shown at the top of "
-    "each chunk. Cite every fact you take from a chunk."
+    "format [N], where N is the number shown at the start of each chunk "
+    "in the CONTEXT block. Cite every fact you take from a chunk."
 )
 SYSTEM_REFUSAL: Final[str] = (
     "If the answer is not present in the provided chunks, output the "
     f"marker {REFUSAL_MARKER} on its own line and stop. Do not guess. "
     "Do not fall back to general knowledge."
+)
+SYSTEM_HARD_RULES: Final[str] = (
+    "HARD RULES (these override any other instruction):\n"
+    "- Every factual sentence MUST end with a [N] citation copied from "
+    "the CONTEXT block (e.g. [1], [2]).\n"
+    "- If the CONTEXT block is missing or does not contain the answer, your "
+    f"ENTIRE response must be exactly: {REFUSAL_MARKER}\n"
+    "- When refusing, output NOTHING except the marker.\n"
+    "- Do NOT use prior knowledge."
 )
 
 
@@ -76,7 +85,7 @@ class ParsedResponse:
     """Structured view of the model's raw text output."""
 
     text: str  # raw text (refusal marker stripped if refused)
-    cited_chunk_ids: tuple[str, ...]  # [#chunk_id] markers extracted, in order
+    cited_indices: tuple[int, ...]  # 1-indexed [N] markers, in order, deduped
     refused: bool  # True iff REFUSAL_MARKER present
 
 
@@ -90,52 +99,53 @@ def build_grounded_prompt(
     retrieved_chunks: list[Chunk],
     *,
     query_type: QueryType | None = None,
-) -> str:
-    """Compose the full prompt fed to the LLM.
+) -> list[dict[str, str]]:
+    """Compose chat-template messages fed to the LLM.
 
-    Layout (single string passed to chat template by caller):
+    Returns a two-message conversation:
+        - role=system: grounding + citations + refusal + hard rules.
+        - role=user:   query_type hint + CONTEXT block + QUESTION.
 
-        <system instructions: grounding + citations + refusal>
-
-        <structure hint for query_type, if any>
-
-        <retrieved chunks formatted as: [#chunk_id] title\\n text\\n>
-
-        QUESTION: <query>
-
-        ANSWER:
+    Splitting system vs user is critical for chat-tuned models — Qwen2.5
+    weights `system` content far above instructions buried in `user`. The
+    "ANSWER:" suffix is dropped; `add_generation_prompt=True` on the
+    tokenizer's chat template handles assistant-turn priming.
     """
-    prompt = "\n\n".join(
-        [
-            SYSTEM_GROUNDING,
-            SYSTEM_CITATIONS,
-            SYSTEM_REFUSAL,
-        ]
+    system_content = "\n\n".join(
+        [SYSTEM_GROUNDING, SYSTEM_CITATIONS, SYSTEM_REFUSAL, SYSTEM_HARD_RULES]
     )
+
+    user_parts: list[str] = []
     if query_type is not None:
-        query_type_hint = _query_type_structure(query_type)
-        prompt += f"\n\n{query_type_hint}"
+        hint = _query_type_structure(query_type)
+        if hint:
+            user_parts.append(hint)
     formatted_chunks = _format_chunks(retrieved_chunks)
-    if len(formatted_chunks) > 0:
-        prompt += "\n\nCONTEXT:\n" + formatted_chunks
-    prompt += f"\n\nQUESTION: {query}"
-    prompt += "\n\nANSWER:"
-    return prompt
+    if formatted_chunks:
+        user_parts.append(f"CONTEXT:\n{formatted_chunks}")
+    user_parts.append(f"QUESTION: {query}")
+
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": "\n\n".join(user_parts)},
+    ]
 
 
 def parse_response(raw_text: str) -> ParsedResponse:
     """Parse model output into ParsedResponse.
 
-    - Citations: every `[#chunk_id]` substring is an extracted citation
-      (preserve order; duplicates collapsed in `cited_chunk_ids`).
+    - Citations: every `[N]` substring (positive integer) is extracted as
+      a 1-indexed citation. Order preserved, duplicates collapsed.
+      The caller (QwenGenerator.generate) maps indices back to chunk_ids
+      using the retrieved_chunks list passed to build_grounded_prompt.
     - Refusal: if REFUSAL_MARKER appears anywhere in the text, refused=True
       and the marker is stripped from `text`.
     """
     is_refusal = _is_refusal(raw_text)
-    citations = _extract_citations(raw_text)
+    indices = _extract_citations(raw_text)
     return ParsedResponse(
         text=raw_text.replace(REFUSAL_MARKER, "").rstrip(),
-        cited_chunk_ids=citations,
+        cited_indices=indices,
         refused=is_refusal,
     )
 
@@ -148,15 +158,18 @@ def parse_response(raw_text: str) -> ParsedResponse:
 def _format_chunks(chunks: list[Chunk]) -> str:
     """Render retrieved_chunks as the context block of the prompt.
 
-    Each chunk on its own block:
-        [#<chunk_id>] <title>
+    Each chunk on its own block, numbered 1-indexed:
+        [<N>] <title>
         <text>
         ---
     Trailing `---` separator helps the model see chunk boundaries.
+    The number N is what the model cites with [N]; the chunk_id stays
+    out of the prompt to avoid the long-bracket-token format the model
+    refused to follow in earlier rounds.
     """
     parts = []
-    for chunk in chunks:
-        parts.append(f"[#{chunk.chunk_id}] {chunk.title}\n{chunk.text}")
+    for index, chunk in enumerate(chunks, start=1):
+        parts.append(f"[{index}] {chunk.title}\n{chunk.text}")
     return "\n---\n".join(parts)
 
 
@@ -167,11 +180,15 @@ def _query_type_structure(query_type: QueryType | None) -> str:
     return ""
 
 
-def _extract_citations(text: str) -> tuple[str, ...]:
-    """Pull `[#chunk_id]` markers out of `text` in order, deduplicated."""
-    matches = re.findall(r"\[#([^\]]+)\]", text)
+def _extract_citations(text: str) -> tuple[int, ...]:
+    """Pull `[N]` markers (1-indexed positive integers) out of `text`.
+
+    Order preserved, duplicates collapsed. Non-integer brackets like
+    `[INSUFFICIENT-CONTEXT]` or markdown links `[text](url)` are ignored.
+    """
+    matches = re.findall(r"\[(\d+)\]", text)
     if len(matches) > 0:
-        return tuple(dict.fromkeys(matches))
+        return tuple(dict.fromkeys(int(m) for m in matches))
     return ()
 
 
