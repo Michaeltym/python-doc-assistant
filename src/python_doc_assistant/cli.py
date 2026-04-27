@@ -1,22 +1,31 @@
 """CLI entry point for python-doc-assistant.
 
-Subcommands (plan §7):
+Subcommands (plan §7 + §9):
     ingest        Download docs archive (calls fetch_docs.ingest_docs).
     build-index   Parse objects.inv + chunk HTML + persist chunks.jsonl + bm25.pkl.
     search        Load indexes + route query + print top-k.
-
-`eval` is added in §9 once retrieval_metrics + run_writer exist.
+    eval          Run eval set; write results.json + per_query.jsonl (plan §9).
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import click
 
+from python_doc_assistant.evaluation.dataset import load_eval_set
+from python_doc_assistant.evaluation.retrieval_metrics import (
+    EvalRunResult,
+    RetrievedChunk,
+    evaluate,
+)
+from python_doc_assistant.evaluation.run_writer import RunMetadata, make_run_dir, write_run
 from python_doc_assistant.indexes.bm25_index import BM25Index, analyze
 from python_doc_assistant.indexes.symbol_index import SymbolIndex
 from python_doc_assistant.ingest.chunker import Chunk, build_chunks
@@ -156,6 +165,107 @@ def search(query: str, k: int, version: str | None, docs_sha: str | None, debug:
 
 
 # ------------------------------------------------------------------
+# Subcommand: eval
+# ------------------------------------------------------------------
+
+
+@main.command(name="eval")
+@click.option(
+    "--set",
+    "set_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to JSONL eval set.",
+)
+@click.option("--tag", required=True, help="Run tag (e.g. 'v0-bm25').")
+@click.option("--version", default=None, help="Override config.toml DOCS_VERSION.")
+@click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
+@click.option("--k", "k", type=int, default=10, help="Top-k retrieved per query.")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Force overwrite if the run directory already exists.",
+)
+def eval_cmd(
+    set_path: Path,
+    tag: str,
+    version: str | None,
+    docs_sha: str | None,
+    k: int,
+    overwrite: bool,
+) -> None:
+    """Run eval set against persisted indexes; write results.json + per_query.jsonl.
+
+    Suggested flow (plan §9):
+        eff_version = _resolve_docs_version(version, config_path=DEFAULT_CONFIG_PATH)
+        eff_sha     = _resolve_docs_sha(eff_version, docs_sha, data_root=DEFAULT_DATA_ROOT)
+
+        chunks   = _load_chunks(<chunks.jsonl path>)
+        bm25     = BM25Index.load(<bm25.pkl path>)
+        symbols  = parse_objects_inv(<docs_dir>)
+        sym_idx  = SymbolIndex(chunks, symbols)
+
+        eval_queries = load_eval_set(set_path)
+
+        retrieve_fn = _make_retrieve_fn(sym_idx, bm25, chunks_by_id)
+        run_result  = evaluate(eval_queries, retrieve_fn, max_k=k)
+
+        manifest = _load_ingest_manifest(<docs_dir>)
+        metadata = RunMetadata(
+            docs_version=eff_version,
+            docs_served_version=manifest["docs_served_version"],
+            docs_sha_short=eff_sha,
+            ingest_manifest=manifest,
+            config={"retrieval_mode": "bm25+symbol", "k": k, "eval_set": str(set_path)},
+            tag=tag,
+            command=" ".join(sys.argv),
+        )
+
+        out_dir = make_run_dir(tag)
+        write_run(out_dir, run_result, metadata, overwrite=overwrite)
+
+        click.echo(f"recall@5={run_result.recall_at_5:.3f}  "
+                   f"recall@10={run_result.recall_at_10:.3f}  "
+                   f"mrr={run_result.mrr:.3f}")
+        click.echo(f"run_dir={out_dir}")
+    """
+    docs_version = _resolve_docs_version(version)
+    docs_sha = _resolve_docs_sha(docs_version, docs_sha)
+    docs_dir = DEFAULT_DATA_ROOT / "docs" / docs_version / docs_sha
+    chunks_path = DEFAULT_DATA_ROOT / "chunks" / docs_version / docs_sha / "chunks.jsonl"
+    bm25_path = DEFAULT_DATA_ROOT / "indexes" / docs_version / docs_sha / "bm25.pkl"
+    chunks = _load_chunks(chunks_path)
+    symbols = parse_objects_inv(docs_dir)
+    symbol_index = SymbolIndex(chunks, symbols)
+    bm25_index = BM25Index.load(bm25_path)
+    eval_queries = load_eval_set(set_path)
+
+    retrieve_fn = _make_retrieve_fn(
+        symbol_index, bm25_index, {chunk.chunk_id: chunk for chunk in chunks}
+    )
+    run_result = evaluate(eval_queries, retrieve_fn, max_k=k)
+
+    manifest = _load_ingest_manifest(docs_dir)
+    metadata = RunMetadata(
+        docs_version=docs_version,
+        docs_served_version=manifest["docs_served_version"],
+        docs_sha_short=docs_sha,
+        ingest_manifest=manifest,
+        config={"retrieval_mode": "bm25+symbol", "k": k, "eval_set": str(set_path)},
+        tag=tag,
+        command=" ".join(sys.argv),
+    )
+    out_dir = make_run_dir(tag)
+    write_run(out_dir, run_result, metadata, overwrite=overwrite)
+    click.echo(
+        f"recall@5={run_result.recall_at_5:.3f}  "
+        f"recall@10={run_result.recall_at_10:.3f}  "
+        f"mrr={run_result.mrr:.3f}"
+    )
+    click.echo(f"run_dir={out_dir}")
+
+
+# ------------------------------------------------------------------
 # Helpers (private)
 # ------------------------------------------------------------------
 
@@ -235,6 +345,59 @@ def _load_chunks(path: Path) -> list[Chunk]:
     return chunks
 
 
+def _load_ingest_manifest(docs_dir: Path) -> dict[str, Any]:
+    """Read docs_dir/ingest_manifest.json into a dict for RunMetadata.ingest_manifest.
+
+    Raises click.ClickException if the manifest is missing or malformed.
+    """
+    path = docs_dir / "ingest_manifest.json"
+    if not path.exists():
+        raise click.ClickException(f"{path} is not found")
+    if not path.is_file():
+        raise click.ClickException(f"{path} is not a regular file")
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+        if not isinstance(data, dict):
+            raise click.ClickException(f"manifest at {path} is not a JSON object")
+    return data
+
+
+def _make_retrieve_fn(
+    symbol_index: SymbolIndex,
+    bm25_index: BM25Index,
+    chunks_by_id: dict[str, Chunk],
+) -> Callable[[str, int], list[RetrievedChunk]]:
+    """Closure factory: returns a retrieve_fn for evaluate().
+
+    The returned fn calls route() and converts result.chunk_ids into
+    RetrievedChunk records (chunk_id + score + 1-indexed rank + url + symbols).
+
+    Score note: route() does not surface BM25/symbol-index scores in v0.
+    Use rank-derived placeholder (e.g. 1.0 / rank or 0.0) and document this
+    in v0 narrative; v1 may extend route() to return scored hits.
+    """
+
+    def retrieve_fn(query: str, k: int) -> list[RetrievedChunk]:
+        result = route(query, symbol_index=symbol_index, bm25_index=bm25_index, k=k)
+        chunks: list[RetrievedChunk] = []
+        for index, chunk_id in enumerate(result.chunk_ids, start=1):
+            chunk = chunks_by_id.get(chunk_id)
+            if chunk:
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id=chunk_id,
+                        score=1.0 / index,
+                        rank=index,
+                        canonical_url=chunk.canonical_url,
+                        symbols=chunk.symbols,
+                    )
+                )
+
+        return chunks
+
+    return retrieve_fn
+
+
 # ------------------------------------------------------------------
 # Imports referenced by subcommands when implemented
 # ------------------------------------------------------------------
@@ -246,15 +409,23 @@ __all__ = [
     "Chunk",
     "DEFAULT_CONFIG_PATH",
     "DEFAULT_DATA_ROOT",
+    "EvalRunResult",
+    "RetrievedChunk",
+    "RunMetadata",
     "SymbolEntry",
     "SymbolIndex",
     "analyze",
     "build_chunks",
     "build_index",
+    "eval_cmd",
+    "evaluate",
     "ingest",
     "ingest_docs",
+    "load_eval_set",
     "main",
+    "make_run_dir",
     "parse_objects_inv",
     "route",
     "search",
+    "write_run",
 ]
