@@ -41,7 +41,13 @@ class RetrievedChunk:
 
 @dataclass(frozen=True)
 class PerQueryResult:
-    """Per-query detail for per_query.jsonl."""
+    """Per-query detail for per_query.jsonl.
+
+    Generation fields (model_output_text / cited_chunk_ids / refused /
+    generation_latency_seconds) are populated only when an eval run
+    invoked a Generator (v1 §4); they stay None for retrieval-only runs
+    (v0).
+    """
 
     query: str
     query_type: str
@@ -53,6 +59,11 @@ class PerQueryResult:
     hit_at_5: bool
     hit_at_10: bool
     rank_for_mrr: int | None  # None when no full match
+    # ---- v1 §4 generation fields (None for retrieval-only runs) -------
+    model_output_text: str | None = None
+    cited_chunk_ids: tuple[str, ...] | None = None
+    refused: bool | None = None
+    generation_latency_seconds: float | None = None
 
 
 @dataclass(frozen=True)

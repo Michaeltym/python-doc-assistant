@@ -437,6 +437,109 @@ def test_cli_eval_prints_summary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert "mrr" in result.output
 
 
+def test_cli_eval_without_model_records_null_generation_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Retrieval-only run → results.json has null model + null decoding_params."""
+    import json as _json
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+    eval_path = tmp_path / "v0.jsonl"
+    _eval_set_jsonl(eval_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    experiments_root = tmp_path / "experiments" / "runs"
+    monkeypatch.setattr(
+        "python_doc_assistant.evaluation.run_writer.DEFAULT_EXPERIMENTS_ROOT",
+        experiments_root,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["eval", "--set", str(eval_path), "--tag", "v0-bm25"])
+    assert result.exit_code == 0, result.output
+
+    rd = next(iter(experiments_root.iterdir()))
+    data = _json.loads((rd / "results.json").read_text(encoding="utf-8"))
+    assert data["model"] is None
+    assert data["decoding_params"] is None
+
+
+def test_cli_eval_with_model_dispatches_to_generation_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--model flag routes through the generation dispatch and surfaces
+    the model_id + decoding_params in results.json.
+
+    Hermetic: monkeypatches `_run_eval_with_optional_generation` so no real
+    Qwen is loaded. Verifies the dispatch passes model_id through.
+    """
+    import json as _json
+
+    from python_doc_assistant.evaluation.retrieval_metrics import EvalRunResult
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+    eval_path = tmp_path / "v0.jsonl"
+    _eval_set_jsonl(eval_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    experiments_root = tmp_path / "experiments" / "runs"
+    monkeypatch.setattr(
+        "python_doc_assistant.evaluation.run_writer.DEFAULT_EXPERIMENTS_ROOT",
+        experiments_root,
+    )
+
+    captured: dict[str, Any] = {}
+    canned_run = EvalRunResult(
+        queries=(), recall_at_5=0.0, recall_at_10=0.0, mrr=0.0, n_queries=0
+    )
+    canned_decoding = {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 512}
+
+    def fake_dispatch(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return canned_run, kwargs["model_id"], canned_decoding
+
+    monkeypatch.setattr(
+        f"{CLI_MODULE}._run_eval_with_optional_generation", fake_dispatch
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "eval",
+            "--set",
+            str(eval_path),
+            "--tag",
+            "v1-qwen",
+            "--model",
+            "Qwen/Qwen2.5-1.5B-Instruct",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["model_id"] == "Qwen/Qwen2.5-1.5B-Instruct"
+
+    rd = next(iter(experiments_root.iterdir()))
+    data = _json.loads((rd / "results.json").read_text(encoding="utf-8"))
+    assert data["model"] == "Qwen/Qwen2.5-1.5B-Instruct"
+    assert data["decoding_params"] == canned_decoding
+
+
 def test_cli_eval_refuses_existing_run_dir_without_overwrite(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

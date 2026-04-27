@@ -182,6 +182,16 @@ def search(query: str, k: int, version: str | None, docs_sha: str | None, debug:
 @click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
 @click.option("--k", "k", type=int, default=10, help="Top-k retrieved per query.")
 @click.option(
+    "--model",
+    "model_id",
+    default=None,
+    help=(
+        "HuggingFace model_id to run grounded generation per query "
+        "(v1 §4). Omit for retrieval-only eval (v0). Examples: "
+        "Qwen/Qwen2.5-1.5B-Instruct, Qwen/Qwen2.5-Coder-1.5B-Instruct."
+    ),
+)
+@click.option(
     "--overwrite",
     is_flag=True,
     help="Force overwrite if the run directory already exists.",
@@ -192,6 +202,7 @@ def eval_cmd(
     version: str | None,
     docs_sha: str | None,
     k: int,
+    model_id: str | None,
     overwrite: bool,
 ) -> None:
     """Run eval set against persisted indexes; write results.json + per_query.jsonl.
@@ -240,10 +251,15 @@ def eval_cmd(
     bm25_index = BM25Index.load(bm25_path)
     eval_queries = load_eval_set(set_path)
 
-    retrieve_fn = _make_retrieve_fn(
-        symbol_index, bm25_index, {chunk.chunk_id: chunk for chunk in chunks}
+    chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
+    retrieve_fn = _make_retrieve_fn(symbol_index, bm25_index, chunks_by_id)
+    run_result, model_field, decoding_params = _run_eval_with_optional_generation(
+        eval_queries=eval_queries,
+        retrieve_fn=retrieve_fn,
+        chunks_by_id=chunks_by_id,
+        max_k=k,
+        model_id=model_id,
     )
-    run_result = evaluate(eval_queries, retrieve_fn, max_k=k)
 
     manifest = _load_ingest_manifest(docs_dir)
     metadata = RunMetadata(
@@ -254,6 +270,8 @@ def eval_cmd(
         config={"retrieval_mode": "bm25+symbol", "k": k, "eval_set": str(set_path)},
         tag=tag,
         command=" ".join(sys.argv),
+        model=model_field,
+        decoding_params=decoding_params,
     )
     out_dir = make_run_dir(tag)
     write_run(out_dir, run_result, metadata, overwrite=overwrite)
@@ -396,6 +414,47 @@ def _make_retrieve_fn(
         return chunks
 
     return retrieve_fn
+
+
+def _run_eval_with_optional_generation(
+    *,
+    eval_queries: list[Any],
+    retrieve_fn: Callable[[str, int], list[RetrievedChunk]],
+    chunks_by_id: dict[str, Chunk],
+    max_k: int,
+    model_id: str | None,
+) -> tuple[EvalRunResult, str | None, dict[str, Any] | None]:
+    """Dispatch retrieval-only vs retrieval+generation eval.
+
+    Returns:
+        (run_result, model_field, decoding_params)
+
+        - model_id is None → retrieval-only (v0 path); model + decoding
+          stay None.
+        - model_id is set → retrieval + generation (v1 §4); model returns
+          the id verbatim and decoding_params surfaces the generator's
+          decoding config so results.json is reproducible.
+
+    Splitting this out keeps `eval_cmd` body small and lets tests cover
+    the dispatch without spinning up a real model.
+    """
+    if model_id is None:
+        run_result = evaluate(eval_queries, retrieve_fn, max_k=max_k)
+        return run_result, None, None
+
+    from python_doc_assistant.evaluation.generation_eval import evaluate_with_generation
+    from python_doc_assistant.generation.qwen_backend import QwenGenerator
+
+    generator = QwenGenerator(model_id)
+    run_result = evaluate_with_generation(
+        eval_queries, retrieve_fn, generator, chunks_by_id, max_k=max_k
+    )
+    decoding_params = {
+        "temperature": generator.temperature,
+        "top_p": generator.top_p,
+        "max_new_tokens": generator.max_new_tokens,
+    }
+    return run_result, model_id, decoding_params
 
 
 # ------------------------------------------------------------------

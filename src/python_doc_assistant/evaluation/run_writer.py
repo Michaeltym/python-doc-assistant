@@ -45,7 +45,11 @@ class RunWriterError(Exception):
 
 @dataclass(frozen=True)
 class RunMetadata:
-    """Reproducibility fields written into results.json (PLAN.md §4 / AGENTS.md §Eval Rules)."""
+    """Reproducibility fields written into results.json (PLAN.md §4 / AGENTS.md §Eval Rules).
+
+    `model` and `decoding_params` are populated only for runs that invoked
+    a Generator (v1 §4); they stay None for retrieval-only runs (v0).
+    """
 
     docs_version: str  # "3.12"
     docs_served_version: str  # "3.12.13"
@@ -54,6 +58,9 @@ class RunMetadata:
     config: dict[str, Any]  # retrieval mode, k, eval set path, etc.
     tag: str  # run tag (e.g. "v0-bm25")
     command: str  # invocation, e.g. "pdr eval --set ... --tag ..."
+    # ---- v1 §4 generation fields (None for retrieval-only runs) -------
+    model: str | None = None  # HuggingFace model_id
+    decoding_params: dict[str, Any] | None = None  # temp / top_p / max_new_tokens
 
 
 # ------------------------------------------------------------------
