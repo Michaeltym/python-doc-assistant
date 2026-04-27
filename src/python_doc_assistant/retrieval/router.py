@@ -18,10 +18,19 @@ from python_doc_assistant.indexes.symbol_index import SymbolIndex
 
 
 class QueryType(str, Enum):
-    """Aligned with eval schema (PLAN.md §8): identifier / natural_language / etc."""
+    """Aligned with eval schema (PLAN.md §8).
+
+    The router's heuristic classifier only emits IDENTIFIER / NATURAL_LANGUAGE
+    (it does not try to distinguish howto / comparison from raw text). The
+    other values are still defined so eval entries and v1 generator prompts
+    can carry them through the interface.
+    """
 
     IDENTIFIER = "identifier"
     NATURAL_LANGUAGE = "natural_language"
+    COMPARISON = "comparison"
+    HOWTO = "howto"
+    OUT_OF_SCOPE = "out_of_scope"
 
 
 @dataclass(frozen=True)

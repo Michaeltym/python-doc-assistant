@@ -17,6 +17,7 @@ dependencies = [
 dev = ["pytest", "ruff", "mypy", "ipython", "types-requests"]
 ingest = ["beautifulsoup4", "lxml", "sphobjinv", "requests"]
 retrieval = ["rank-bm25", "numpy", "rapidfuzz"]
+generation = ["transformers", "torch", "accelerate"]
 
 [project.scripts]
 python-doc-assistant = "python_doc_assistant.cli:main"
@@ -44,7 +45,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "rank_bm25.*"
 ignore_missing_imports = true
-
 
 [tool.pytest.ini_options]                                                                                    
 testpaths = ["tests"]    
