@@ -76,9 +76,9 @@ def _metadata() -> RunMetadata:
             "docs_archive_sha256": "a5c1a35a5a02..." + "0" * 50,
             "ingest_timestamp": "2026-04-25T09:55:36Z",
         },
-        config={"retrieval_mode": "bm25+symbol", "k": 10, "eval_set": "v0_core_30.jsonl"},
+        config={"retrieval_mode": "bm25+symbol", "k": 10, "eval_set": "v0_core.jsonl"},
         tag="v0-bm25",
-        command="pdr eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25",
+        command="pdr eval --set eval_sets/v0_core.jsonl --tag v0-bm25",
     )
 
 

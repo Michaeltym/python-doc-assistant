@@ -222,7 +222,7 @@ Eval set construction:
 
 1. Hand-pick the 30 most frequently asked symbols in the Python standard library to start (`dict`, `list`, `pathlib.Path`, `os`, `json`, `collections`, `functools`, `itertools`, etc.)
 2. Annotate each query with the **multi-answer** schema: `expected_symbols` (array) + `expected_urls` (array) + `query_type`
-3. File format: `eval_sets/v0_core_30.jsonl`, one JSON per line
+3. File format: `eval_sets/v0_core.jsonl`, one JSON per line
 
 Schema example:
 
@@ -335,7 +335,7 @@ python-doc-assistant/
 │               ├── bm25.pkl
 │               └── dense.npy              # v2
 ├── eval_sets/
-│   ├── v0_core_30.jsonl            # v0 initial version (multi-answer schema)
+│   ├── v0_core.jsonl            # v0 initial version (multi-answer schema)
 │   └── v2_full_200.jsonl           # v2 expansion
 ├── experiments/
 │   ├── v0-bm25-only.md

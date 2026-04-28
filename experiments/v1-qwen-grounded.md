@@ -23,7 +23,7 @@ Living document. Filled in incrementally as §3 → §7 of `plans/v1-qwen-genera
 - **prompt format:** numeric `[N]` citations, HARD RULES, system/user role split, no few-shot
 - **chat template:** `tokenizer.apply_chat_template(..., tokenize=False, add_generation_prompt=True)` (Qwen2.5 default)
 
-Reproducibility fields below (`docs_version`, `docs_served_version`, `docs_sha_short`, `ingest_manifest`) will be filled once §6 runs against `eval_sets/v0_core_30.jsonl`. §3 smoke used hand-crafted `Chunk` objects, not the ingested corpus.
+Reproducibility fields below (`docs_version`, `docs_served_version`, `docs_sha_short`, `ingest_manifest`) will be filled once §6 runs against `eval_sets/v0_core.jsonl`. §3 smoke used hand-crafted `Chunk` objects, not the ingested corpus.
 
 ## §3 Smoke findings (2 hand-crafted queries)
 
@@ -73,7 +73,7 @@ Four prompt configurations were smoke-tested before settling on the current stat
 
 ## §4 — Qwen vs Qwen-Coder side-by-side
 
-Two `pdr eval` runs on `eval_sets/v0_core_30.jsonl` (n=34 — set name kept from v0; actual size is 34), same retrieval pipeline, different generator.
+Two `pdr eval` runs on `eval_sets/v0_core.jsonl` (n = 34), same retrieval pipeline, different generator.
 
 ### Reproducibility
 
@@ -270,7 +270,7 @@ After §5, the priority list is:
 
 ### Methodology
 
-- **Eval set:** `eval_sets/v0_core_30.jsonl` (n = 34; name retains v0 prefix from when set was first authored).
+- **Eval set:** `eval_sets/v0_core.jsonl` (n = 34).
 - **Tiers** (plan §6 + `refused` for the marker case): `correct`, `partial`, `wrong`, `hallucination`, `refused`. Definitions in `src/python_doc_assistant/evaluation/human_scoring.py` docstring.
 - **Tooling:** `evaluation/human_scoring.py` validates and aggregates `human_scores.jsonl` (one entry per query). Tests in `tests/test_human_scoring.py`.
 - **Process** — three review passes:

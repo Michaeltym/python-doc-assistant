@@ -223,7 +223,7 @@ python-doc-assistant ingest --version 3.12
 python-doc-assistant build-index  [--docs-sha <sha_short>]
 python-doc-assistant search "Path.read_text" --k 5  [--docs-sha <sha_short>]
 python-doc-assistant search "how to iterate dict safely" --k 5 --debug
-python-doc-assistant eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25  [--docs-sha <sha_short>]
+python-doc-assistant eval --set eval_sets/v0_core.jsonl --tag v0-bm25  [--docs-sha <sha_short>]
 ```
 
 (The `pdr` alias is available during development)
@@ -240,7 +240,7 @@ python-doc-assistant eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25  [--doc
 
 ### 8. Eval set v0 (**finished before the code**)
 
-File: `eval_sets/v0_core_30.jsonl`
+File: `eval_sets/v0_core.jsonl`
 
 - 30–50 queries, **hand-written**
 - Multi-answer + match_policy schema:
@@ -306,7 +306,7 @@ Run directory naming: `experiments/runs/<YYYY-MM-DDTHH-MM-SS>-<tag>/` (ISO 8601 
 CLI:
 
 ```text
-python-doc-assistant eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25
+python-doc-assistant eval --set eval_sets/v0_core.jsonl --tag v0-bm25
 ```
 
 **Acceptance criteria:**
@@ -328,7 +328,7 @@ Half a page to a page, answering:
 
 ## Completion criteria
 
-- [ ] `eval_sets/v0_core_30.jsonl` has 30–50 queries, multi-answer + `match_policy` schema
+- [ ] `eval_sets/v0_core.jsonl` has 30–50 queries, multi-answer + `match_policy` schema
 - [ ] A single command runs end-to-end from a clean state: `uv sync && python-doc-assistant ingest && python-doc-assistant build-index && python-doc-assistant eval`
 - [ ] `ingest_manifest.json` has all five fields (`docs_version` / `docs_served_version` / `docs_url` / `docs_archive_sha256` / `ingest_timestamp`)
 - [ ] Chunk schema has all 11 fields (`chunk_id` / `chunk_type` / `docs_version` / `title` / `text` / `symbols` / `canonical_url` / `anchor` / `parent_module` / `source_path` / `source_hash`), with `chunk_id` globally unique

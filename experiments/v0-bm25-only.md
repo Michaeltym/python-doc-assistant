@@ -11,7 +11,7 @@ Retrieval pipeline (no LLM, no dense embeddings, no rerank):
 | Symbol index | Multi-key dict; full + last-2 + last-1 segment short forms; `rapidfuzz.fuzz.ratio` ≥ 85 fallback. |
 | BM25 | `rank_bm25.BM25Okapi` with k1=1.5, b=0.75. Analyzer (plan §5): split on `.` → CamelCase split (uppercase-abbrev + digit boundaries; merged form preserved) → `_` split (dunder preserved) → lowercase → drop empty/punctuation. |
 | Router | Heuristic (no ML). `^[A-Za-z0-9._]+$` and no whitespace → IDENTIFIER → SymbolIndex.lookup; else NATURAL_LANGUAGE → BM25. Identifier miss → fallback BM25 (`used=("bm25",)`). |
-| Eval set | `eval_sets/v0_core_30.jsonl` — 34 queries (14 identifier / 17 natural_language / 3 comparison). Multi-answer schema with `match_policy` (any / all) and `url_match` (default strip_anchor). |
+| Eval set | `eval_sets/v0_core.jsonl` — 34 queries (14 identifier / 17 natural_language / 3 comparison). Multi-answer schema with `match_policy` (any / all) and `url_match` (default strip_anchor). |
 
 ## Aggregate metrics
 
@@ -74,7 +74,7 @@ Priorities, ordered by expected impact:
 
 4. **Score surfacing through `route()`**: v0 uses a `1.0 / rank` placeholder because `route()` does not expose BM25 / SymbolIndex scores upstream. Real scores are needed for v2 hybrid merge (RRF / linear weighting).
 
-5. **Out-of-scope queries** (plan §v1): no row in `v0_core_30.jsonl` exercises refusal behavior because v0 has no generator. v1 should add `eval_sets/v1_out_of_scope_20.jsonl` to measure refusal rate after Qwen is wired in.
+5. **Out-of-scope queries** (plan §v1): no row in `v0_core.jsonl` exercises refusal behavior because v0 has no generator. v1 should add `eval_sets/v1_out_of_scope_20.jsonl` to measure refusal rate after Qwen is wired in.
 
 ## Reproducibility
 
@@ -83,7 +83,7 @@ All runs are written to `experiments/runs/<timestamp>-<tag>/` with `results.json
 ```
 uv run pdr ingest --version 3.12
 uv run pdr build-index
-uv run pdr eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25
+uv run pdr eval --set eval_sets/v0_core.jsonl --tag v0-bm25
 ```
 
 `results.json` records `docs_version` / `docs_served_version` / `docs_sha_short` / full `ingest_manifest` snapshot / config / command, so the corpus and pipeline state are recoverable even if `current.txt` later moves to a newer sha.

@@ -54,7 +54,7 @@ uv sync --extra dev --extra ingest --extra retrieval
 uv run pdr ingest --version 3.12
 uv run pdr build-index
 uv run pdr search "Path.read_text" --k 5 --debug
-uv run pdr eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25
+uv run pdr eval --set eval_sets/v0_core.jsonl --tag v0-bm25
 ```
 
 Do not install torch, transformers, sentence-transformers, or reranker dependencies during v0 unless the task explicitly requires them.

@@ -33,7 +33,7 @@ uv run pdr search "Path.read_text" --k 5
 uv run pdr search "how to iterate dict safely" --k 5 --debug
 
 # Run the eval set (writes experiments/runs/<timestamp>-<tag>/)
-uv run pdr eval --set eval_sets/v0_core_30.jsonl --tag v0-bm25
+uv run pdr eval --set eval_sets/v0_core.jsonl --tag v0-bm25
 ```
 
 ---
@@ -147,7 +147,7 @@ python-doc-assistant/
 ├── config.toml                     # DOCS_VERSION = "3.12"
 ├── plans/                          # per-stage plans
 ├── eval_sets/
-│   └── v0_core_30.jsonl            # 34 hand-written queries
+│   └── v0_core.jsonl            # 34 hand-written queries
 ├── experiments/
 │   ├── v0-bm25-only.md             # narrative
 │   └── runs/<ts>-<tag>/            # machine-readable run snapshots
@@ -217,7 +217,7 @@ measured against.
 - **Framework-light.** No LangChain, LlamaIndex, hosted vector DBs, or
   general orchestration frameworks. Direct stdlib + targeted libraries
   only.
-- **Evaluation-first.** Eval set design (`eval_sets/v0_core_30.jsonl`)
+- **Evaluation-first.** Eval set design (`eval_sets/v0_core.jsonl`)
   precedes retrieval optimization. Failing queries are data signals
   for the next stage, not bugs to "fix" by adjusting expected values.
 - **Stage-isolated dependencies.** v0 deliberately does not install
