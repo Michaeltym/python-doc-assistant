@@ -137,7 +137,7 @@ class QwenGenerator(Generator):
         )
         return Answer(
             text="" if parsed_response.refused else parsed_response.text,
-            cited_chunk_ids=cited_chunk_ids,
+            cited_chunk_ids=() if parsed_response.refused else cited_chunk_ids,
             refused=parsed_response.refused,
             latency_seconds=time.perf_counter() - start_time,
         )

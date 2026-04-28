@@ -146,6 +146,20 @@ def test_generate_refusal_yields_empty_text() -> None:
     assert REFUSAL_MARKER not in answer.text
 
 
+def test_generate_refusal_clears_cited_chunk_ids() -> None:
+    """Refused answer must have empty cited_chunk_ids even when model leaks
+    a [N] marker alongside the refusal (e.g. '[1] [INSUFFICIENT-CONTEXT]').
+
+    Catches a Codex review finding from the v2 dense+rerank+qwen run
+    where two refused rows still carried non-empty cited_chunk_ids.
+    """
+    gen = _StubQwenGenerator(canned_response=f"[1] {REFUSAL_MARKER}")
+    answer = gen.generate("q", [_chunk("c1"), _chunk("c2")])
+    assert answer.refused is True
+    assert answer.text == ""
+    assert answer.cited_chunk_ids == ()
+
+
 def test_generate_records_nonneg_latency() -> None:
     gen = _StubQwenGenerator(canned_response="ok")
     answer = gen.generate("q", [_chunk("c1")])
