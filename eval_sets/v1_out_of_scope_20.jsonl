@@ -1,0 +1,20 @@
+{"query": "how to train a transformer model", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "ML / deep learning architecture; not in Python stdlib docs"}
+{"query": "JavaScript array reduce method", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "JavaScript language; not Python"}
+{"query": "what is gradient descent", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "ML optimization concept; not in stdlib"}
+{"query": "Rust ownership rules", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "Rust language semantics"}
+{"query": "Django REST framework serializers", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "third-party Django plugin; not stdlib"}
+{"query": "Kubernetes pod autoscaling", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "cloud orchestration"}
+{"query": "AWS Lambda cold start", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "AWS service operational concept"}
+{"query": "PostgreSQL window functions", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "SQL feature; not Python stdlib"}
+{"query": "Go goroutines and channels", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "Go language concurrency primitives"}
+{"query": "PyTorch DataLoader batching", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "third-party ML framework API"}
+{"query": "MQTT broker QoS levels", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "IoT messaging protocol; not stdlib"}
+{"query": "Vue.js reactive state", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "JavaScript framework concept"}
+{"query": "FastAPI dependency injection", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "third-party web framework"}
+{"query": "C++ smart pointers", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "C++ language feature"}
+{"query": "what is a B-tree index", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "database / data structure concept; not Python-specific"}
+{"query": "Ruby on Rails routing", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "Ruby web framework"}
+{"query": "Docker multi-stage build", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "container build feature"}
+{"query": "TypeScript generics syntax", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "TypeScript language; Python typing module differs"}
+{"query": "Redis pub/sub pattern", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "Redis data store messaging"}
+{"query": "what is HTTP/2 multiplexing", "query_type": "out_of_scope", "expected_symbols": [], "expected_urls": [], "notes": "HTTP protocol feature; Python http module covers HTTP/1.1 only"}
