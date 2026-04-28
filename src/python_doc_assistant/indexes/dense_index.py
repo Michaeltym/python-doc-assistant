@@ -95,7 +95,27 @@ class DenseIndex:
                )
                # shape: (N, D)
         """
-        raise NotImplementedError
+        self._model_id = model_id
+        self._chunk_ids = [c.chunk_id for c in chunks]
+        if model is None:
+            from sentence_transformers import SentenceTransformer
+
+            model = SentenceTransformer(model_id)
+            self._model = model
+        else:
+            self._model = model
+        texts = [self._chunk_to_text(c) for c in chunks]
+        if not texts:
+            import numpy as np
+
+            self._embeddings = np.empty((0, DEFAULT_EMBEDDING_DIM), dtype=np.float32)
+        else:
+            self._embeddings = self._model.encode(
+                texts,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
 
     def search(self, query: str, *, k: int = 10) -> list[DenseHit]:
         """Top-K DenseHits ranked by cosine similarity (highest first).
@@ -113,7 +133,18 @@ class DenseIndex:
             - No score-floor filter; cosine is unbounded below; downstream
               hybrid merge can apply its own threshold.
         """
-        raise NotImplementedError
+        if len(self._chunk_ids) == 0:
+            return []
+        import numpy as np
+
+        query_embedding = self._model.encode(
+            query,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        )
+        scores = self._embeddings @ query_embedding
+        top_idx = np.argsort(-scores)[:k]
+        return [DenseHit(chunk_id=self._chunk_ids[i], score=float(scores[i])) for i in top_idx]
 
     def save(self, path: Path) -> None:
         """Persist embeddings to `<path>` and sidecar metadata to `<path>.json`.
@@ -130,7 +161,20 @@ class DenseIndex:
 
         `path` is conventionally `dense.npy`; the sidecar becomes `dense.json`.
         """
-        raise NotImplementedError
+        import numpy as np
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(path, self._embeddings)
+        meta_path = path.with_suffix(".json")
+        with meta_path.open("w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "model_id": self._model_id,
+                    "chunk_ids": self._chunk_ids,
+                    "dim": int(self._embeddings.shape[1]),
+                },
+                f,
+            )
 
     @classmethod
     def load(cls, path: Path, *, model: Any = None) -> DenseIndex:
@@ -155,7 +199,29 @@ class DenseIndex:
                instance._model      = model or SentenceTransformer(meta["model_id"])
                return instance
         """
-        raise NotImplementedError
+
+        if not path.exists():
+            raise FileNotFoundError(f"Embeddings not found at {path}")
+        json_path = path.with_suffix(".json")
+        if not json_path.exists():
+            raise FileNotFoundError(f"Metadata not found at {json_path}")
+        import numpy as np
+
+        embeddings = np.load(path)
+        with json_path.open("r", encoding="utf-8") as f:
+            metadata = json.load(f)
+        instance = cls.__new__(cls)
+        instance._embeddings = embeddings
+        instance._model_id = metadata["model_id"]
+        instance._chunk_ids = metadata["chunk_ids"]
+        if model is not None:
+            instance._model = model
+        else:
+            from sentence_transformers import SentenceTransformer
+
+            model = SentenceTransformer(instance._model_id)
+            instance._model = model
+        return instance
 
     # ------------------------------------------------------------------
     # Helpers (private)
