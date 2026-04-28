@@ -11,7 +11,7 @@ Living document. Filled in incrementally as §3 → §7 of `plans/v1-qwen-genera
 | §3 | QwenGenerator wiring | ✅ done (commit `8b440ba`) |
 | §4 | Qwen-Coder side-by-side | ✅ done (commit `ecc3e53` + this doc) |
 | §5 | CLI `--debug` extension (`pdr ask`) | ✅ done (commit + this doc) |
-| §6 | 4-tier human scoring on full eval set | ⏳ TODO |
+| §6 | 4-tier human scoring on full eval set | ✅ done (this doc + `human_scores.jsonl` per run) |
 | §7 | Refusal rate on out-of-scope eval set | ⏳ TODO |
 | §8 | v2 priority recommendation | partially answered in §4 — confirmed below in §6/§8 |
 
@@ -266,8 +266,63 @@ After §5, the priority list is:
 - `--debug` annotates each citation with `in_retrieved=yes|no`
 - without `--debug` no `[debug] *` blocks appear
 
+## §6 — 4-tier human scoring on full eval set
+
+### Methodology
+
+- **Eval set:** `eval_sets/v0_core_30.jsonl` (n = 34; name retains v0 prefix from when set was first authored).
+- **Tiers** (plan §6 + `refused` for the marker case): `correct`, `partial`, `wrong`, `hallucination`, `refused`. Definitions in `src/python_doc_assistant/evaluation/human_scoring.py` docstring.
+- **Tooling:** `evaluation/human_scoring.py` validates and aggregates `human_scores.jsonl` (one entry per query). Tests in `tests/test_human_scoring.py`.
+- **Process** — three review passes:
+  1. **Heuristic draft:** `tmp/scores-draft/<tag>-human-scores-draft.jsonl` generated from cited-vs-expected overlap + retrieval presence.
+  2. **Claude review:** 12 reclassifications targeting boundary cases (no-cite-but-correct → `partial` not `wrong`; cite-grounded-but-wrong-symbol disambiguation).
+  3. **Codex review (rounds 1 + 2) + Gemini review:** 14 further reclassifications. Codex tightened the rubric: *"reserve `hallucination` for content not present in retrieved chunks or unrelated citations made to look grounded; grounded-but-wrong-API answers are `wrong`."* Final hallucination rate dropped from heuristic 26-29 % to scored 14.7 % per run.
+- **Final scores** committed at `experiments/runs/<run>/human_scores.jsonl`.
+
+### Aggregate (after multi-reviewer pass)
+
+| Tier | v1-qwen (Base Instruct) | v1-coder | Notes |
+|---|---|---|---|
+| correct | 12 (35.3 %) | 10 (29.4 %) | facts + citations both right |
+| partial | 14 (41.2 %) | 16 (47.1 %) | answer right but wrong/missing citation, OR cite ok but content thin |
+| wrong | 3 (8.8 %) | 2 (5.9 %) | factually wrong (regardless of citation) |
+| **hallucination** | **5 (14.7 %)** | **5 (14.7 %)** | content not in retrieved chunks OR unrelated cite faking grounding |
+| refused | 0 | 1 (2.9 %) | model emitted `[INSUFFICIENT-CONTEXT]` |
+| **hallucination_rate** | **0.147** | **0.147** | plan §6 target was < 0.10 — **not met** |
+| **correct_rate** | 0.353 | 0.294 | |
+
+### Headline finding — both models tie on hallucination, but for different reasons
+
+This is the §6 result that drives the v2 plan more than the §4 numbers did:
+
+> **Coder = "lazy grounding"** — cites the correct chunk but produces empty / structure-only output (e.g. `functools.wraps` answer was just `definition -> [1] context -> [1] example -> [1]` with zero substantive prose). Coder treats RAG as a retrieval-only task and over-extracts.
+>
+> **Base = "fake grounding"** — cites unrelated retrieved chunks to dress up prior-knowledge prose (e.g. `how to count occurrences in a list` → cited `multiprocessing.shared_memory.ShareableList.count` while writing about generic `list.count`).
+>
+> Both failure modes converge on the same hallucination rate (14.7 %), but the mechanisms differ. Coder needs prompt pressure to actually use the chunk; Base needs prompt pressure to refuse rather than fabricate.
+
+(Mechanism analysis credit: Codex + Gemini reviewer notes.)
+
+### Specific failure cases worth keeping
+
+| query | tier (v1-qwen / v1-coder) | what happened |
+|---|---|---|
+| how to count occurrences in a list | partial / refused | Base cited `ShareableList.count` (paraphrased its description) but answered with prior-knowledge `list.count` example. Coder correctly refused because `collections.Counter` was not retrieved. |
+| collections.Counter | partial / partial | Both produced mostly-correct definitions but Base falsely claimed `Counter` supports `fromkeys` — the cited docs explicitly state it does NOT. Codex caught this. |
+| how to convert a string to bytes | wrong / wrong | Both cited `urllib.parse.unquote_to_bytes` (URL decoder) — wrong API for the asked-for `str.encode` task. |
+| json vs pickle | wrong / partial | Base reversed the security guidance (claimed JSON is vulnerable, pickle is secure — opposite of truth). Coder hedged. |
+| how to use functools wraps | correct / partial | Coder: empty echo of the structure hint with `[1]` placeholders, no real prose despite cite-match-expected. The clearest single instance of "lazy grounding". |
+| how to join two paths | partial / wrong | Coder degenerated into `join_thread() join_thread() join_thread() ...` token-loop; chunker fragmentation (§5 finding) likely contributed. |
+
+### vs plan §6 completion bar
+
+- **Target:** hallucination_rate < 0.10
+- **Result:** 0.147 on both models (n = 34). **Target NOT met.**
+- **Distance:** 4.7 pp; means roughly 2 fewer hallucinations on the same set would clear the bar — fragile boundary, more eval data would tighten the estimate.
+
+Plan §142 lists "upgrade to 7B" as the explicit decision point when 1.5B fails the < 10 % target. **§6 says trigger that decision** — alongside the §4 + §5 retrieval / chunker fixes that drive the bar lower without needing more parameters.
+
 ## TODO
 
-- **§6** — run on `eval_sets/v0_core_30.jsonl`; 4-tier human scoring; compute hallucination rate; populate `experiments/runs/<ts>-v1-qwen/` with `human_scores.jsonl`
 - **§7** — author `eval_sets/v1_out_of_scope_20.jsonl` (20 queries); compute refusal rate; pin baseline number
-- **§8** — recommend v2 priority — §4 + §5 already converge on (1) retrieval upgrade + (2) chunker code-block fix; §6/§7 numbers should confirm or reject
+- **§8** — recommend v2 priority — §4 + §5 + §6 converge on: (1) retrieval upgrade (dense + rerank), (2) chunker code-block fix, (3) optional 7B upgrade if (1)(2) leave hallucination_rate above 10 %

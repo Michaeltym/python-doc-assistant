@@ -1,0 +1,34 @@
+{"query": "pathlib.Path.read_text", "tier": "correct", "notes": "cited ['pathlib.Path.read_text']"}
+{"query": "Path.read_text", "tier": "partial", "notes": "Codex review: cited pathlib.Path.read_text (expected) AND zipfile.Path.read_text (extra); citation set mixed \u2014 strict 'all cites in expected' rule \u2192 partial"}
+{"query": "dict.fromkeys", "tier": "correct", "notes": "cited ['dict.fromkeys']"}
+{"query": "os.path.join", "tier": "correct", "notes": "cited ['os.path.join']"}
+{"query": "json.loads", "tier": "correct", "notes": "cited ['json.loads']"}
+{"query": "re.compile", "tier": "correct", "notes": "cited ['re.compile']"}
+{"query": "datetime.datetime.now", "tier": "correct", "notes": "cited ['datetime.datetime.now']"}
+{"query": "collections.Counter", "tier": "partial", "notes": "no citation; expected symbol(s) WERE in retrieved top-5"}
+{"query": "functools.lru_cache", "tier": "partial", "notes": "no citation; expected symbol(s) WERE in retrieved top-5"}
+{"query": "itertools.chain", "tier": "correct", "notes": "cited ['itertools.chain']"}
+{"query": "subprocess.run", "tier": "correct", "notes": "cited ['subprocess.run']"}
+{"query": "io.open", "tier": "correct", "notes": "cited ['io.open']"}
+{"query": "open", "tier": "partial", "notes": "cited 5 chunks (incl pathlib.Path.open which IS expected) but prose mostly describes imaplib.IMAP4.open \u2014 mixed grounding"}
+{"query": "how to read a file in python", "tier": "partial", "notes": "Codex review: prose grounded in cited gzip examples chunk but answers narrower compressed-file variant rather than expected open/pathlib symbols"}
+{"query": "how to iterate a dictionary safely", "tier": "hallucination", "notes": "cited ['dict.popitem'] (not expected); expected NOT in retrieved (retrieval miss)"}
+{"query": "how to join two paths", "tier": "wrong", "notes": "Codex review 2: 'join_thread()' repetition is grounded in retrieved (wrong) chunk; degenerate output of grounded-but-wrong-API answer, not hallucination"}
+{"query": "how to parse json from a string", "tier": "partial", "notes": "no citation; expected symbol(s) WERE in retrieved top-5"}
+{"query": "how to format a date as iso 8601", "tier": "partial", "notes": "no citation; expected symbol(s) WERE in retrieved top-5"}
+{"query": "how to count occurrences in a list", "tier": "refused", "notes": "model emitted [INSUFFICIENT-CONTEXT]"}
+{"query": "how to memoize a function", "tier": "hallucination", "notes": "cited ['library/copyreg#example'] (not expected); expected NOT in retrieved (retrieval miss)"}
+{"query": "how to flatten a nested list with itertools", "tier": "hallucination", "notes": "cited ['itertools.product'] (not expected); expected NOT in retrieved (retrieval miss)"}
+{"query": "how to compile a regex pattern", "tier": "partial", "notes": "cited ['fnmatch.translate'] (wrong); expected was in retrieved"}
+{"query": "how to run a shell command from python", "tier": "partial", "notes": "no citation; prose correctly describes subprocess.run"}
+{"query": "what is a context manager in python", "tier": "partial", "notes": "no citation; prose correctly describes context manager"}
+{"query": "how to convert a string to bytes", "tier": "wrong", "notes": "Codex review: grounded in retrieved URL/bytes chunks (not hallucination) but does not give expected str.encode/bytes answer; factually wrong tool"}
+{"query": "how to define an enum class", "tier": "partial", "notes": "no citation; prose correctly describes enum.Enum"}
+{"query": "how to create a temporary file", "tier": "partial", "notes": "Codex review: cited tempfile.NamedTemporaryFile (expected) but also non-expected section/test-helper chunks; citation set mixed"}
+{"query": "how to catch multiple exceptions", "tier": "hallucination", "notes": "cited ['library/exceptions#exception-groups', 'library/exceptions#inheriting-from-built-in-exceptions', 'library/warnings#testing-warnings', 'library/xdrlib#exceptions', 'resource.RLIMIT_CPU'] (not expected); expected NOT in retrieved (retrieval miss)"}
+{"query": "Path vs os.path", "tier": "partial", "notes": "Codex review: cited pathlib#correspondence-to-tools-in-the-os-module section is directly relevant to the comparison; grounded with non-expected (but related) citations"}
+{"query": "list vs tuple", "tier": "hallucination", "notes": "cited ['pstats.Stats.print_callees', 'pstats.Stats.reverse_order'] (not expected); expected NOT in retrieved (retrieval miss)"}
+{"query": "json vs pickle", "tier": "partial", "notes": "Codex review 2: cited json/pickle chunks directly relevant and mostly used; one incorrect interop claim + non-expected citations make this partial not hallucination"}
+{"query": "dict.fromKeys", "tier": "correct", "notes": "cited ['dict.fromkeys']"}
+{"query": "how to use functools wraps", "tier": "partial", "notes": "cited matches expected, but prose is just 'definition -> [1] context -> [1] example -> [1] source citation -> [1]' \u2014 empty echo of hint, no real content"}
+{"query": "asyncio coroutines and tasks", "tier": "partial", "notes": "Codex review: cited asyncio sections are relevant retrieved context; missing expected Task/create_task/gather/TaskGroup symbols"}
