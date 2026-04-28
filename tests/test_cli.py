@@ -333,6 +333,191 @@ def _setup_index_artifacts(tmp_path: Path, sha: str = "abcdef123456") -> None:
     (docs_dir / "ingest_manifest.json").write_text(_json.dumps(manifest), encoding="utf-8")
 
 
+# ------------------------------------------------------------------
+# CLI: ask (plan v1 §5)
+# ------------------------------------------------------------------
+
+
+class _StubAskGenerator:
+    """Stub for QwenGenerator used by `pdr ask` tests.
+
+    Records last call so tests can assert on what was passed in. The class
+    matches the call shape `QwenGenerator(model_id)` and exposes a
+    `.generate(query, chunks, *, query_type=None, stream=False)` method.
+    """
+
+    def __init__(self, model_id: str = "stub", **_: Any) -> None:
+        self.model_id = model_id
+        self.last_query: str | None = None
+        self.last_chunks: list[Chunk] | None = None
+        # Response payload — overridable per-test by mutating these:
+        self.text: str = "Use `read_text()` [1]."
+        self.cited_chunk_ids: tuple[str, ...] = ("symbol:pathlib.Path.read_text",)
+        self.refused: bool = False
+        self.latency_seconds: float = 0.5
+
+    def generate(
+        self,
+        query: str,
+        retrieved_chunks: list[Chunk],
+        **_: Any,
+    ) -> Any:
+        from python_doc_assistant.generation.interface import Answer
+
+        self.last_query = query
+        self.last_chunks = retrieved_chunks
+        return Answer(
+            text=self.text,
+            cited_chunk_ids=self.cited_chunk_ids,
+            refused=self.refused,
+            latency_seconds=self.latency_seconds,
+        )
+
+
+def _ask_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _StubAskGenerator:
+    """Common fixture for pdr ask tests: config + indexes + stub generator.
+
+    Returns the stub generator instance the CLI will use, so tests can mutate
+    its response payload before invoking the command.
+    """
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+
+    # Patch QwenGenerator at its source module — the CLI lazy-imports it
+    # at call time, so we must intercept the source attribute (not a name
+    # already bound in cli.py).
+    stub = _StubAskGenerator()
+
+    def factory(model_id: str = "stub", **kwargs: Any) -> _StubAskGenerator:
+        stub.model_id = model_id
+        return stub
+
+    monkeypatch.setattr(
+        "python_doc_assistant.generation.qwen_backend.QwenGenerator", factory
+    )
+    return stub
+
+
+def test_cli_ask_prints_answer_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without --debug, only the model's answer text is printed."""
+    stub = _ask_setup(monkeypatch, tmp_path)
+    stub.text = "The read_text method returns the file contents [1]."
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "Path.read_text"])
+    assert result.exit_code == 0, result.output
+    assert "The read_text method returns the file contents [1]." in result.output
+
+
+def test_cli_ask_refused_prints_refusal_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Refused answer (empty text) → user sees [INSUFFICIENT-CONTEXT] rather than blank."""
+    stub = _ask_setup(monkeypatch, tmp_path)
+    stub.text = ""
+    stub.cited_chunk_ids = ()
+    stub.refused = True
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "what is graphql"])
+    assert result.exit_code == 0, result.output
+    assert "[INSUFFICIENT-CONTEXT]" in result.output
+
+
+def test_cli_ask_passes_model_id_through(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--model flag reaches QwenGenerator constructor."""
+    stub = _ask_setup(monkeypatch, tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main, ["ask", "Path.read_text", "--model", "Qwen/Qwen2.5-Coder-1.5B-Instruct"]
+    )
+    assert result.exit_code == 0, result.output
+    assert stub.model_id == "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+
+
+def test_cli_ask_debug_prints_retrieved_chunks_with_scores(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--debug shows rank + score + chunk_id for each retrieved chunk."""
+    _ask_setup(monkeypatch, tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "Path.read_text", "--debug"])
+    assert result.exit_code == 0, result.output
+    # At least one chunk shown with rank= score= id= format
+    assert "rank=" in result.output
+    assert "score=" in result.output
+    # The retrieved chunk id appears (symbol:pathlib.Path.read_text is in fixture)
+    assert "symbol:pathlib.Path.read_text" in result.output
+
+
+def test_cli_ask_debug_prints_final_prompt_messages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--debug dumps the chat-template messages (system + user blocks)."""
+    _ask_setup(monkeypatch, tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "Path.read_text", "--debug"])
+    assert result.exit_code == 0, result.output
+    # System block delimiter
+    assert "--- system ---" in result.output
+    # User block delimiter
+    assert "--- user ---" in result.output
+    # System content fragment proves the prompt was rendered
+    assert "documentation chunks provided below" in result.output
+
+
+def test_cli_ask_debug_validates_citations_against_retrieved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--debug flags each cited chunk_id with whether it was in the top-K set."""
+    stub = _ask_setup(monkeypatch, tmp_path)
+    stub.cited_chunk_ids = (
+        "symbol:pathlib.Path.read_text",  # likely IS in retrieved
+        "symbol:totally:made:up",  # NOT in retrieved
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "Path.read_text", "--debug"])
+    assert result.exit_code == 0, result.output
+    assert "in_retrieved=yes" in result.output
+    assert "in_retrieved=no" in result.output
+
+
+def test_cli_ask_no_debug_omits_debug_blocks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without --debug, none of the debug section headers appear."""
+    _ask_setup(monkeypatch, tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ask", "Path.read_text"])
+    assert result.exit_code == 0, result.output
+    assert "[debug] retrieved" not in result.output
+    assert "[debug] prompt" not in result.output
+    assert "[debug] citations" not in result.output
+
+
+# ------------------------------------------------------------------
+# CLI: eval (plan §9)
+# ------------------------------------------------------------------
+
+
 def test_cli_eval_writes_run_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """eval should produce a run dir under DEFAULT_EXPERIMENTS_ROOT with both files."""
     cfg = tmp_path / "config.toml"

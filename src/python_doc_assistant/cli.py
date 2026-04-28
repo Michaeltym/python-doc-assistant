@@ -165,6 +165,138 @@ def search(query: str, k: int, version: str | None, docs_sha: str | None, debug:
 
 
 # ------------------------------------------------------------------
+# Subcommand: ask (plan v1 §5)
+# ------------------------------------------------------------------
+
+
+@main.command(name="ask")
+@click.argument("query")
+@click.option("--k", "k", type=int, default=5, help="Top-k chunks to retrieve.")
+@click.option(
+    "--model",
+    "model_id",
+    default="Qwen/Qwen2.5-1.5B-Instruct",
+    help="HuggingFace model_id for the generator.",
+)
+@click.option("--version", default=None, help="Override config.toml DOCS_VERSION.")
+@click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Also print retrieved chunks (id + score), final prompt, citation match.",
+)
+def ask(
+    query: str,
+    k: int,
+    model_id: str,
+    version: str | None,
+    docs_sha: str | None,
+    debug: bool,
+) -> None:
+    """Answer QUERY using grounded retrieval + Qwen generation.
+
+    Default output:  the model's answer text on stdout (one block).
+    With --debug:    additionally prints the four blocks plan §5 requires:
+        1. retrieved chunks (rank + score + chunk_id)
+        2. final prompt — full chat-template messages fed to the LLM
+        3. (the answer is already printed)
+        4. citation validation — for each chunk_id the model cited,
+           whether it was in the top-K retrieved set
+
+    Suggested flow:
+        eff_version = _resolve_docs_version(version)
+        eff_sha     = _resolve_docs_sha(eff_version, docs_sha)
+        docs_dir    = DEFAULT_DATA_ROOT / "docs"   / eff_version / eff_sha
+        chunks_path = DEFAULT_DATA_ROOT / "chunks" / eff_version / eff_sha / "chunks.jsonl"
+        bm25_path   = DEFAULT_DATA_ROOT / "indexes"/ eff_version / eff_sha / "bm25.pkl"
+
+        chunks       = _load_chunks(chunks_path)
+        symbols      = parse_objects_inv(docs_dir)
+        symbol_index = SymbolIndex(chunks, symbols)
+        bm25_index   = BM25Index.load(bm25_path)
+        chunks_by_id = {c.chunk_id: c for c in chunks}
+
+        retrieve_fn = _make_retrieve_fn(symbol_index, bm25_index, chunks_by_id)
+        retrieved   = retrieve_fn(query, k)            # list[RetrievedChunk]
+        gen_chunks  = [chunks_by_id[r.chunk_id] for r in retrieved if r.chunk_id in chunks_by_id]
+
+        from python_doc_assistant.generation.qwen_backend import QwenGenerator
+        from python_doc_assistant.prompts.grounded import build_grounded_prompt
+        from python_doc_assistant.retrieval.router import classify
+
+        generator = QwenGenerator(model_id)
+        qt        = classify(query)
+        answer    = generator.generate(query, gen_chunks, query_type=qt)
+
+        click.echo(answer.text or "[INSUFFICIENT-CONTEXT]")
+
+        if debug:
+            click.echo("")
+            click.echo("[debug] retrieved:")
+            for r in retrieved:
+                click.echo(f"  rank={r.rank}  score={r.score:.3f}  id={r.chunk_id}")
+            click.echo("")
+            click.echo("[debug] prompt (chat messages):")
+            messages = build_grounded_prompt(query, gen_chunks, query_type=qt)
+            for m in messages:
+                click.echo(f"--- {m['role']} ---")
+                click.echo(m["content"])
+            click.echo("")
+            click.echo("[debug] citations:")
+            retrieved_ids = {r.chunk_id for r in retrieved}
+            if not answer.cited_chunk_ids:
+                click.echo("  (none)")
+            else:
+                for cid in answer.cited_chunk_ids:
+                    in_set = "yes" if cid in retrieved_ids else "no (not in top-K)"
+                    click.echo(f"  cited={cid}  in_retrieved={in_set}")
+    """
+    docs_version = _resolve_docs_version(version)
+    docs_sha = _resolve_docs_sha(docs_version, docs_sha)
+    docs_dir = DEFAULT_DATA_ROOT / "docs" / docs_version / docs_sha
+    chunks_path = DEFAULT_DATA_ROOT / "chunks" / docs_version / docs_sha / "chunks.jsonl"
+    bm25_path = DEFAULT_DATA_ROOT / "indexes" / docs_version / docs_sha / "bm25.pkl"
+    chunks = _load_chunks(chunks_path)
+    symbols = parse_objects_inv(docs_dir)
+    symbol_index = SymbolIndex(chunks, symbols)
+    bm25_index = BM25Index.load(bm25_path)
+
+    chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
+    retrieve_fn = _make_retrieve_fn(symbol_index, bm25_index, chunks_by_id)
+    retrieved = retrieve_fn(query, k)
+    gen_chunks = [chunks_by_id[r.chunk_id] for r in retrieved if r.chunk_id in chunks_by_id]
+    from python_doc_assistant.generation.qwen_backend import QwenGenerator
+    from python_doc_assistant.prompts.grounded import build_grounded_prompt
+    from python_doc_assistant.retrieval.router import classify
+
+    generator = QwenGenerator(model_id)
+    qt = classify(query)
+    answer = generator.generate(query, gen_chunks, query_type=qt)
+    click.echo(answer.text or "[INSUFFICIENT-CONTEXT]")
+
+    if debug:
+        click.echo("")
+        click.echo("[debug] retrieved:")
+        for r in retrieved:
+            click.echo(f"  rank={r.rank}  score={r.score:.3f}  id={r.chunk_id}")
+        click.echo("")
+        click.echo("[debug] prompt (chat messages):")
+        messages = build_grounded_prompt(query, gen_chunks, query_type=qt)
+        for m in messages:
+            click.echo(f"--- {m['role']} ---")
+            click.echo(m["content"])
+        click.echo("")
+        click.echo("[debug] citations:")
+        retrieved_ids = {r.chunk_id for r in retrieved}
+        if not answer.cited_chunk_ids:
+            click.echo("  (none)")
+        else:
+            for cid in answer.cited_chunk_ids:
+                in_set = "yes" if cid in retrieved_ids else "no (not in top-K)"
+                click.echo(f"  cited={cid}  in_retrieved={in_set}")
+
+
+# ------------------------------------------------------------------
 # Subcommand: eval
 # ------------------------------------------------------------------
 

@@ -10,7 +10,7 @@ Living document. Filled in incrementally as §3 → §7 of `plans/v1-qwen-genera
 | §2 | grounded prompt template + parser | ✅ done (commit `b14129f`) |
 | §3 | QwenGenerator wiring | ✅ done (commit `8b440ba`) |
 | §4 | Qwen-Coder side-by-side | ✅ done (commit `ecc3e53` + this doc) |
-| §5 | CLI `--debug` extension | ⏳ TODO |
+| §5 | CLI `--debug` extension (`pdr ask`) | ✅ done (commit + this doc) |
 | §6 | 4-tier human scoring on full eval set | ⏳ TODO |
 | §7 | Refusal rate on out-of-scope eval set | ⏳ TODO |
 | §8 | v2 priority recommendation | partially answered in §4 — confirmed below in §6/§8 |
@@ -167,9 +167,107 @@ Coder marginally better on hallucination (3 vs 6 estimated); §6 will pin number
 - **The 38–41 % citation-match-expected ceiling is set by retrieval, not generation.** Six NL queries deterministically retrieve the wrong chunks; the model can only cite what it sees. **v2 P0 = retrieval upgrade (dense + rerank)**, not prompt iteration or model swap.
 - **Update default in `config.toml`?** Not yet — §6 4-tier human scoring + §7 refusal eval should confirm before pinning Coder as the v1 default in code. Current `qwen_backend.py` `DEFAULT_MODEL_ID` stays `Qwen/Qwen2.5-1.5B-Instruct`.
 
+## §5 — `pdr ask` CLI + debug discovery
+
+`pdr ask <query> [--debug] [--model <hf_id>] [--k 5]` runs a single
+grounded retrieval + generation in one shot. `--debug` prints four blocks
+per plan §5: retrieved chunks (rank + score + chunk_id), final chat
+template messages, the answer, and citation validation (each cited
+chunk_id annotated with `in_retrieved=yes|no (not in top-K)`).
+
+### Smoke run on `"How to read a text file with pathlib?"`
+
+Retrieval (k=5):
+
+```
+rank=1  score=1.000  id=section:library/gzip#examples-of-usage      ← wrong domain
+rank=2  score=0.500  id=symbol:zipfile.Path.read_text                ← related
+rank=3  score=0.333  id=symbol:sqlite3.Connection.text_factory       ← unrelated
+rank=4  score=0.250  id=symbol:pathlib.Path.read_text                ← target
+rank=5  score=0.200  id=symbol:importlib.resources.read_text         ← related
+```
+
+Target chunk lands at rank 4. Generator output: a clean prose answer +
+correct code example using `Path.read_text()`, but `cited_chunk_ids=()` —
+**no `[N]` emitted at all.** Same "no citation" failure mode §4
+quantified at 32 %. The model wrote from prior knowledge instead of
+grounding in chunk [4].
+
+### Headline finding (NEW, beyond §5 scope) — chunker fragments code blocks
+
+The `--debug` prompt dump exposed a chunker quality bug. The first chunk
+shipped to the LLM contains:
+
+```
+[1] Examples of usage
+Example of how to read a compressed file:
+import
+gzip
+with
+gzip
+.
+open
+(
+'/home/joe/file.txt.gz'
+,
+'rb'
+)
+as
+f
+:
+file_content
+=
+f
+.
+read
+()
+```
+
+Every Python token sits on its own line. Cause: the chunker processes
+the Sphinx `<pre>` blocks span-by-span instead of text-by-text, so each
+`<span class="...">token</span>` becomes a line in `chunk.text`. On
+identifier queries this is mostly cosmetic, but on natural-language
+howto queries the LLM has to mentally reassemble the code before
+deciding whether the chunk is relevant — and frequently it gives up
+and writes from prior knowledge.
+
+This connects two §4 findings into one mechanism:
+- **No-citation rate (32 %)** is partly chunker-driven, not just model-
+  weakness — even when retrieval is right, the chunk is hard to read.
+- **The "looks-cited" hallucination rate** (cite-but-not-expected, 29-32 %)
+  shrinks if chunks are grounded enough for the model to actually use.
+
+### v2 priority update (extends §4)
+
+Original §4 verdict: v2 P0 = retrieval upgrade (dense + rerank).
+
+After §5, the priority list is:
+
+1. **Retrieval upgrade** (dense + rerank) — fixes the 6 wrong-routed NL
+   queries; lifts the 38-41 % citation-match ceiling.
+2. **Chunker code-block fix** — collapse `<pre>`/`<code>` token-spans
+   back into single text lines so chunks are LLM-readable. Likely
+   bigger generation-quality lift than another prompt round.
+3. **Reranker** — re-orders the top-N retrieved set by semantic
+   similarity to query; complements (1).
+4. Prompt tweaks (few-shot, structure-hint rewording) — only after
+   (1)-(3) ship, since they confound measurements today.
+
+### `pdr ask` test coverage
+
+7 hermetic tests in `tests/test_cli.py` (no real Qwen loaded, stubs
+`QwenGenerator` via monkeypatch):
+
+- prints answer text without `--debug`
+- refused answer (empty `text`) prints `[INSUFFICIENT-CONTEXT]` fallback
+- `--model` flag reaches the generator constructor
+- `--debug` prints retrieved chunks with `rank=`/`score=`/`id=`
+- `--debug` prints final prompt (`--- system ---` / `--- user ---` blocks)
+- `--debug` annotates each citation with `in_retrieved=yes|no`
+- without `--debug` no `[debug] *` blocks appear
+
 ## TODO
 
-- **§5** — extend `pdr ask` with `--debug` (chunks + scores + final prompt + answer + citation match against retrieved set)
 - **§6** — run on `eval_sets/v0_core_30.jsonl`; 4-tier human scoring; compute hallucination rate; populate `experiments/runs/<ts>-v1-qwen/` with `human_scores.jsonl`
 - **§7** — author `eval_sets/v1_out_of_scope_20.jsonl` (20 queries); compute refusal rate; pin baseline number
-- **§8** — recommend v2 priority (rerank-first vs dense-first) — §4 already points strongly at "retrieval first"; §6/§7 numbers should confirm or reject
+- **§8** — recommend v2 priority — §4 + §5 already converge on (1) retrieval upgrade + (2) chunker code-block fix; §6/§7 numbers should confirm or reject
