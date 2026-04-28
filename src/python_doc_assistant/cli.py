@@ -80,7 +80,19 @@ def ingest(version: str, force_switch: bool) -> None:
 @main.command(name="build-index")
 @click.option("--version", default=None, help="Override config.toml DOCS_VERSION.")
 @click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
-def build_index(version: str | None, docs_sha: str | None) -> None:
+@click.option(
+    "--with-dense",
+    is_flag=True,
+    help=(
+        "Also build the dense embedding index (saves to dense.npy + dense.json "
+        "next to bm25.pkl). Requires the `embedding` extra installed."
+    ),
+)
+def build_index(
+    version: str | None,
+    docs_sha: str | None,
+    with_dense: bool,
+) -> None:
     """Parse symbols + chunk HTML + persist chunks.jsonl + bm25.pkl.
 
     Suggested flow:
@@ -112,6 +124,13 @@ def build_index(version: str | None, docs_sha: str | None) -> None:
     bm25_index.save(bm25_path)
     click.echo(f"chunks={len(chunks)}  -> {chunks_path}")
     click.echo(f"bm25  -> {bm25_path}")
+    if with_dense:
+        from python_doc_assistant.indexes.dense_index import DenseIndex
+
+        dense_path = DEFAULT_DATA_ROOT / "indexes" / docs_version / docs_sha / "dense.npy"
+        dense_index = DenseIndex(chunks)
+        dense_index.save(dense_path)
+        click.echo(f"dense -> {dense_path}")
 
 
 # ------------------------------------------------------------------
@@ -314,6 +333,39 @@ def ask(
 @click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
 @click.option("--k", "k", type=int, default=10, help="Top-k retrieved per query.")
 @click.option(
+    "--retriever",
+    type=click.Choice(
+        ["bm25", "symbol+bm25", "dense", "hybrid-rrf", "hybrid-linear"],
+        case_sensitive=True,
+    ),
+    default="symbol+bm25",
+    help=(
+        "Retrieval pipeline (v2 §5 ablation). 'symbol+bm25' is the v0 baseline "
+        "router. dense / hybrid-* require a dense index built via "
+        "`pdr build-index --with-dense`."
+    ),
+)
+@click.option(
+    "--alpha",
+    type=float,
+    default=0.5,
+    help="Linear-merge alpha (only used when --retriever=hybrid-linear).",
+)
+@click.option(
+    "--rerank",
+    is_flag=True,
+    help=(
+        "Wrap the chosen retriever with a cross-encoder reranker: "
+        "fetch top-N candidates → rerank → top-k. Requires the `rerank` extra."
+    ),
+)
+@click.option(
+    "--rerank-candidates",
+    type=int,
+    default=20,
+    help="N candidates fetched from the inner retriever before rerank (default 20).",
+)
+@click.option(
     "--model",
     "model_id",
     default=None,
@@ -334,6 +386,10 @@ def eval_cmd(
     version: str | None,
     docs_sha: str | None,
     k: int,
+    retriever: str,
+    alpha: float,
+    rerank: bool,
+    rerank_candidates: int,
     model_id: str | None,
     overwrite: bool,
 ) -> None:
@@ -384,7 +440,18 @@ def eval_cmd(
     eval_queries = load_eval_set(set_path)
 
     chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
-    retrieve_fn = _make_retrieve_fn(symbol_index, bm25_index, chunks_by_id)
+    retrieve_fn = _build_eval_retrieve_fn(
+        retriever=retriever,
+        chunks=chunks,
+        chunks_by_id=chunks_by_id,
+        docs_version=docs_version,
+        docs_sha=docs_sha,
+        bm25_index=bm25_index,
+        symbol_index=symbol_index,
+        alpha=alpha,
+        rerank=rerank,
+        rerank_candidates=rerank_candidates,
+    )
     run_result, model_field, decoding_params = _run_eval_with_optional_generation(
         eval_queries=eval_queries,
         retrieve_fn=retrieve_fn,
@@ -399,7 +466,14 @@ def eval_cmd(
         docs_served_version=manifest["docs_served_version"],
         docs_sha_short=docs_sha,
         ingest_manifest=manifest,
-        config={"retrieval_mode": "bm25+symbol", "k": k, "eval_set": str(set_path)},
+        config={
+            "retriever": retriever,
+            "k": k,
+            "eval_set": str(set_path),
+            "alpha": alpha if retriever == "hybrid-linear" else None,
+            "rerank": rerank,
+            "rerank_candidates": rerank_candidates if rerank else None,
+        },
         tag=tag,
         command=" ".join(sys.argv),
         model=model_field,
@@ -546,6 +620,90 @@ def _make_retrieve_fn(
         return chunks
 
     return retrieve_fn
+
+
+def _build_eval_retrieve_fn(
+    *,
+    retriever: str,
+    chunks: list[Chunk],
+    chunks_by_id: dict[str, Chunk],
+    docs_version: str,
+    docs_sha: str,
+    bm25_index: BM25Index,
+    symbol_index: SymbolIndex,
+    alpha: float,
+    rerank: bool,
+    rerank_candidates: int,
+) -> Callable[[str, int], list[RetrievedChunk]]:
+    """Wire the retrieval factory for `eval_cmd` (v2 §5 prereq).
+
+    Loads the dense index and/or cross-encoder reranker only when the
+    chosen retriever / `--rerank` flag needs them. `bm25_index` and
+    `symbol_index` are passed in already-built by `eval_cmd`.
+
+    Implementation outline:
+
+        1. Decide what the retriever needs:
+              needs_dense   = retriever in {"dense", "hybrid-rrf", "hybrid-linear"}
+              needs_symbol  = retriever == "symbol+bm25"
+
+        2. Lazy-load DenseIndex when needed:
+              from python_doc_assistant.indexes.dense_index import DenseIndex
+              dense_path = (
+                  DEFAULT_DATA_ROOT / "indexes" / docs_version / docs_sha
+                  / "dense.npy"
+              )
+              dense_index = DenseIndex.load(dense_path)
+           Otherwise dense_index = None.
+
+        3. Lazy-load CrossEncoderReranker when rerank=True:
+              from python_doc_assistant.retrieval.rerank import CrossEncoderReranker
+              reranker = CrossEncoderReranker()
+           Otherwise reranker = None.
+
+        4. Lazy-import the factory and return its closure:
+              from python_doc_assistant.retrieval.factory import build_retrieve_fn
+              return build_retrieve_fn(
+                  retriever=retriever,
+                  chunks_by_id=chunks_by_id,
+                  bm25_index=bm25_index,
+                  symbol_index=symbol_index if needs_symbol else None,
+                  dense_index=dense_index,
+                  reranker=reranker,
+                  alpha=alpha,
+                  rerank_candidates=rerank_candidates,
+              )
+
+    All three of DenseIndex / CrossEncoderReranker / factory.build_retrieve_fn
+    must be imported INSIDE this function (not at module top level) so
+    the v0 / no-extras install path keeps `python -m python_doc_assistant`
+    working.
+    """
+    needs_dense = retriever in {"dense", "hybrid-rrf", "hybrid-linear"}
+    needs_symbol = retriever == "symbol+bm25"
+    dense_index = None
+    reranker = None
+    if needs_dense:
+        from python_doc_assistant.indexes.dense_index import DenseIndex
+
+        dense_path = DEFAULT_DATA_ROOT / "indexes" / docs_version / docs_sha / "dense.npy"
+        dense_index = DenseIndex.load(dense_path)
+    if rerank:
+        from python_doc_assistant.retrieval.rerank import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker()
+    from python_doc_assistant.retrieval.factory import build_retrieve_fn
+
+    return build_retrieve_fn(
+        retriever=retriever,
+        chunks_by_id=chunks_by_id,
+        bm25_index=bm25_index,
+        symbol_index=symbol_index if needs_symbol else None,
+        dense_index=dense_index,
+        reranker=reranker,
+        alpha=alpha,
+        rerank_candidates=rerank_candidates,
+    )
 
 
 def _run_eval_with_optional_generation(

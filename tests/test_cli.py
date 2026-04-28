@@ -334,6 +334,215 @@ def _setup_index_artifacts(tmp_path: Path, sha: str = "abcdef123456") -> None:
 
 
 # ------------------------------------------------------------------
+# CLI: build-index --with-dense (v2 §5 prereq)
+# ------------------------------------------------------------------
+
+
+def test_cli_build_index_with_dense_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--with-dense triggers DenseIndex(chunks).save(<.../dense.npy>)."""
+    saved: list[Path] = []
+
+    class _StubDenseIndex:
+        def __init__(self, chunks: list[Chunk], **_: Any) -> None:
+            self.chunks = chunks
+
+        def save(self, path: Path) -> None:
+            saved.append(path)
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+    docs_dir = tmp_path / "data" / "docs" / "3.12" / "abcdef123456"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(
+        f"{CLI_MODULE}.build_chunks",
+        lambda *_args, **_kwargs: [_symbol_chunk("pathlib.Path.read_text")],
+    )
+    monkeypatch.setattr(
+        "python_doc_assistant.indexes.dense_index.DenseIndex", _StubDenseIndex
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["build-index", "--with-dense"])
+    assert result.exit_code == 0, result.output
+    assert len(saved) == 1
+    assert saved[0].name == "dense.npy"
+    assert "dense ->" in result.output
+
+
+# ------------------------------------------------------------------
+# CLI: eval --retriever / --rerank (v2 §5 prereq)
+# ------------------------------------------------------------------
+
+
+def _stub_build_eval_retrieve_fn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, Any]:
+    """Replace _build_eval_retrieve_fn with a capturing stub.
+
+    Returns a dict that will hold the kwargs the CLI passed in.
+    """
+    captured: dict[str, Any] = {}
+
+    def fake_build(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return lambda q, k: []  # empty retrieve_fn → no chunks retrieved
+
+    monkeypatch.setattr(f"{CLI_MODULE}._build_eval_retrieve_fn", fake_build)
+    return captured
+
+
+def test_cli_eval_default_retriever_is_symbol_bm25(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No --retriever flag → defaults to v0 'symbol+bm25' router."""
+    captured = _stub_build_eval_retrieve_fn(monkeypatch)
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+    eval_path = tmp_path / "v0.jsonl"
+    _eval_set_jsonl(eval_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(
+        "python_doc_assistant.evaluation.run_writer.DEFAULT_EXPERIMENTS_ROOT",
+        tmp_path / "experiments" / "runs",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["eval", "--set", str(eval_path), "--tag", "v2-default"])
+    assert result.exit_code == 0, result.output
+    assert captured["retriever"] == "symbol+bm25"
+    assert captured["rerank"] is False
+
+
+def test_cli_eval_dense_retriever_kwarg_threading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--retriever dense reaches the dispatch helper."""
+    captured = _stub_build_eval_retrieve_fn(monkeypatch)
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+    eval_path = tmp_path / "v0.jsonl"
+    _eval_set_jsonl(eval_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(
+        "python_doc_assistant.evaluation.run_writer.DEFAULT_EXPERIMENTS_ROOT",
+        tmp_path / "experiments" / "runs",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["eval", "--set", str(eval_path), "--tag", "v2-dense", "--retriever", "dense"],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["retriever"] == "dense"
+
+
+def test_cli_eval_rerank_flag_threads_through(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--rerank + --rerank-candidates reach the dispatch helper."""
+    captured = _stub_build_eval_retrieve_fn(monkeypatch)
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+    eval_path = tmp_path / "v0.jsonl"
+    _eval_set_jsonl(eval_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(
+        "python_doc_assistant.evaluation.run_writer.DEFAULT_EXPERIMENTS_ROOT",
+        tmp_path / "experiments" / "runs",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "eval", "--set", str(eval_path), "--tag", "v2-rerank",
+            "--retriever", "hybrid-rrf",
+            "--rerank",
+            "--rerank-candidates", "30",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["retriever"] == "hybrid-rrf"
+    assert captured["rerank"] is True
+    assert captured["rerank_candidates"] == 30
+
+
+def test_cli_eval_alpha_flag_threads_through(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--alpha 0.7 reaches the dispatch helper."""
+    captured = _stub_build_eval_retrieve_fn(monkeypatch)
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('DOCS_VERSION = "3.12"\n', encoding="utf-8")
+    current = tmp_path / "data" / "docs" / "3.12" / "current.txt"
+    current.parent.mkdir(parents=True, exist_ok=True)
+    current.write_text("abcdef123456\n", encoding="utf-8")
+
+    _setup_index_artifacts(tmp_path)
+    eval_path = tmp_path / "v0.jsonl"
+    _eval_set_jsonl(eval_path)
+
+    monkeypatch.setattr(f"{CLI_MODULE}.parse_objects_inv", lambda _docs_dir: [])
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(
+        "python_doc_assistant.evaluation.run_writer.DEFAULT_EXPERIMENTS_ROOT",
+        tmp_path / "experiments" / "runs",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "eval", "--set", str(eval_path), "--tag", "v2-linear",
+            "--retriever", "hybrid-linear",
+            "--alpha", "0.7",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["retriever"] == "hybrid-linear"
+    assert captured["alpha"] == pytest.approx(0.7)
+
+
+# ------------------------------------------------------------------
 # CLI: ask (plan v1 §5)
 # ------------------------------------------------------------------
 
