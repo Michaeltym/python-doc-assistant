@@ -12,8 +12,8 @@ Living document. Filled in incrementally as §3 → §7 of `plans/v1-qwen-genera
 | §4 | Qwen-Coder side-by-side | ✅ done (commit `ecc3e53` + this doc) |
 | §5 | CLI `--debug` extension (`pdr ask`) | ✅ done (commit + this doc) |
 | §6 | 4-tier human scoring on full eval set | ✅ done (this doc + `human_scores.jsonl` per run) |
-| §7 | Refusal rate on out-of-scope eval set | ⏳ TODO |
-| §8 | v2 priority recommendation | partially answered in §4 — confirmed below in §6/§8 |
+| §7 | Refusal rate on out-of-scope eval set | ✅ done (this doc + 2 oos run snapshots) |
+| §8 | v2 priority recommendation | ✅ done (this doc, see §8 below) |
 
 ## Reproducibility (current)
 
@@ -322,7 +322,91 @@ This is the §6 result that drives the v2 plan more than the §4 numbers did:
 
 Plan §142 lists "upgrade to 7B" as the explicit decision point when 1.5B fails the < 10 % target. **§6 says trigger that decision** — alongside the §4 + §5 retrieval / chunker fixes that drive the bar lower without needing more parameters.
 
-## TODO
+## §7 — Refusal rate on out-of-scope eval set
 
-- **§7** — author `eval_sets/v1_out_of_scope_20.jsonl` (20 queries); compute refusal rate; pin baseline number
-- **§8** — recommend v2 priority — §4 + §5 + §6 converge on: (1) retrieval upgrade (dense + rerank), (2) chunker code-block fix, (3) optional 7B upgrade if (1)(2) leave hallucination_rate above 10 %
+### Eval set
+
+- **File:** `eval_sets/v1_out_of_scope_20.jsonl` (n = 20)
+- **Schema:** every row has `expected_symbols=[]`, `expected_urls=[]`, `query_type="out_of_scope"`. Retrieval recall@K is 0 by construction; the metric of interest is the generator's refusal behavior.
+- **Topic spread:** ML / DL frameworks (transformer, gradient descent, PyTorch DataLoader), other languages (JS, Rust, Go, Ruby, C++, TypeScript), web/SaaS (Django REST, FastAPI, Vue.js, Rails), DevOps/cloud (K8s, AWS Lambda, Docker), datastores/protocols (PostgreSQL window functions, Redis pub/sub, MQTT QoS, B-tree, HTTP/2). All clearly outside the Python stdlib docs corpus.
+
+### Reproducibility
+
+Same as §4 / §6: greedy decoding, k_for_generation=5, MPS, docs sha `a5c1a35a5a02`.
+
+- `experiments/runs/2026-04-28T02-04-35-v1-qwen-oos/` — `Qwen/Qwen2.5-1.5B-Instruct`
+- `experiments/runs/2026-04-28T02-10-13-v1-coder-oos/` — `Qwen/Qwen2.5-Coder-1.5B-Instruct`
+
+### Aggregate
+
+| Dimension | v1-qwen-oos | v1-coder-oos |
+|---|---|---|
+| n queries | 20 | 20 |
+| Refused (`refused == true`) | 14 | 14 |
+| **refusal_rate** | **0.70** | **0.70** |
+| Mean generation latency | 4.3 s | 6.3 s |
+| Total wall time | 85 s | 126 s |
+
+(Latency is much lower than §4 / §6 because refusing emits `[INSUFFICIENT-CONTEXT]` and stops — no full 512-token answer.)
+
+### Headline finding — refusal works on OBVIOUS misses, not SUBTLE ones
+
+This is the key §7 result that re-frames §4 + §6:
+
+| Retrieval miss type | Example | Refusal behavior |
+|---|---|---|
+| **Obvious cross-domain** | "Rust ownership rules", "Kubernetes pod autoscaling" → returns `tkinter.font` / `imghdr.what` chunks | model identifies chunks as irrelevant, fires HARD-RULES refusal (70 % rate) |
+| **Subtle same-domain wrong-API** | "how to count occurrences in a list" → returns `bytes.replace` / `str.replace` chunks | model treats chunks as related, hallucinates an answer + invents a citation (§4 / §6) |
+
+Plan §7 implicitly assumed refusal is a single dimension; it's actually two. The bar that matters for v2 is **subtle-miss refusal**, where the §4 / §6 numbers (~0 %) hold and the §7 number does NOT generalize.
+
+### What survived refusal — 6 leaked queries per model
+
+The 6 queries each model "answered" rather than refusing:
+
+**v1-qwen-oos:**
+1. "what is gradient descent" — prior-knowledge prose, no citation
+2. "what is a B-tree index" — prior-knowledge prose, no citation
+3. "what is HTTP/2 multiplexing" — prior-knowledge prose, no citation
+4. "Django REST framework serializers" — bracket leakage `[Django REST framework serializers]` then prose
+5. "Vue.js reactive state" — prose + invented `[symbol:codecs.IncrementalEncoder.setstate]` citation (clearly fabricated)
+6. "Kubernetes pod autoscaling" — **degenerate token loop** `[1] [2] [3] [4] ... [26] ...` (retrieval returned no chunks; same empty-CONTEXT failure as §3 smoke Test 2 "Paris")
+
+**v1-coder-oos:**
+1. "what is gradient descent" — prior knowledge
+2. "what is a B-tree index" — prior knowledge, with `[BTreeIndex]` bracket prefix
+3. "what is HTTP/2 multiplexing" — prior knowledge
+4. "how to train a transformer model" — generic ML steps, no citation
+5. "AWS Lambda cold start" — prior knowledge
+6. "Ruby on Rails routing" — prior knowledge
+
+### Patterns
+
+1. **Three queries leak on both models** (gradient descent / B-tree / HTTP/2 multiplexing). All are `"what is X"` definitional queries. The model's prior on `"what is X"` → "produce a definition" beats the HARD-RULES "refuse if not in chunks" instruction.
+2. **Asymmetric leakage on the other 3+3** — Base leaked Django / Vue / K8s, Coder leaked transformer / Lambda / Rails. Aligns with §6 mechanism contrast (Coder over-extracts when training distribution covers the topic; Base "fake-grounds" with prior knowledge prose).
+3. **Empty retrieval is brittle.** "Kubernetes pod autoscaling" returned 0 chunks → Base degenerated into bracket-number spam (`[1] [2] ... [26]`). This is the exact failure plan §3 Round D-strict tried to fix and failed; the bug is still there for empty CONTEXT, just rare.
+
+### Versus plan §7 completion
+
+- Plan §7 asks "compute the fraction of correct refusals". Result: **0.70 on both models**.
+- The narrative §7 wanted ("refusal works") is partially true and partially misleading. **§4 + §6 + §7 together** show that 70 % refusal is the upper bound on a domain so foreign that even the model can tell the chunks are unrelated; refusal collapses on subtle misses where retrieval surfaces lexically-similar wrong-API chunks.
+- v2 priority unchanged: retrieval quality (which determines whether the model sees obvious-miss or subtle-miss) drives generation behavior more than prompt or model choice.
+
+## §8 — v2 priority recommendation
+
+After §3-§7, the v2 priority list is:
+
+1. **Retrieval upgrade — dense + rerank.** This is the lever with the most leverage:
+   - Lifts the §4 citation-match-expected ceiling from 38-41 % toward 80 %+ (informed guess based on closing the 6 NL queries that route wrong).
+   - Converts subtle-miss situations into obvious-miss → §7 refusal_rate of 70 % becomes the floor not ceiling.
+   - The §6 "lazy grounding" / "fake grounding" failure modes both shrink when chunks are correct.
+2. **Chunker code-block fix** (§5 finding). Sphinx `<pre>`/`<code>` blocks currently fragment one Python token per line; LLM cannot read them. Generation hallucinates more on howto queries with code answers as a result.
+3. **Optional 7B upgrade** (plan §142 decision). Only worthwhile if (1) + (2) leave hallucination_rate above 10 %. Cost: ~14 GB download, MPS inference 30-60 s/query. Coder vs Base tied at 14.7 % hallucination; the gap to <10 % is small enough that retrieval/chunker fixes alone may close it.
+4. **Few-shot or prompt rewording** — defer until (1)-(3) ship; current prompt iterations confound measurement (see §3 prompt iteration log).
+
+### Out of scope for v1; logged for future
+
+- `query_id` field on `EvalQuery` for stable joins (PLAN.md §8 review noted; deferred).
+- Aggregator that updates `results.json` in place with `human_scores` + `refusal_rate` aggregates (currently in narrative only; could move into `evaluation/run_writer.py`).
+- Larger eval set (n = 100-200 per plan §6 stretch goal).
+- Out-of-scope schema: `notes` field describing why each query is out of scope; today included but not validated.

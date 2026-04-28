@@ -1,0 +1,29 @@
+{
+  "docs_version": "3.12",
+  "docs_served_version": "3.12.13",
+  "docs_sha_short": "a5c1a35a5a02",
+  "ingest_manifest": {
+    "docs_version": "3.12",
+    "docs_served_version": "3.12.13",
+    "docs_url": "https://docs.python.org/3.12/archives/python-3.12-docs-html.tar.bz2",
+    "docs_archive_sha256": "a5c1a35a5a0281ea680b714fb6de853dc2a3f813c24773828851ec6d1b8099da",
+    "ingest_timestamp": "2026-04-25T09:55:36Z"
+  },
+  "config": {
+    "retrieval_mode": "bm25+symbol",
+    "k": 10,
+    "eval_set": "eval_sets/v1_out_of_scope_20.jsonl"
+  },
+  "tag": "v1-coder-oos",
+  "command": "/Users/michaeltan/Desktop/training/python-doc-assistant/.venv/bin/pdr eval --set eval_sets/v1_out_of_scope_20.jsonl --tag v1-coder-oos --model Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "decoding_params": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512
+  },
+  "recall_at_5": 0.0,
+  "recall_at_10": 0.0,
+  "mrr": 0.0,
+  "n_queries": 20
+}
