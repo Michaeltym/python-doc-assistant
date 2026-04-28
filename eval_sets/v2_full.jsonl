@@ -1,0 +1,111 @@
+{"query": "pathlib.Path.read_text", "query_type": "identifier", "expected_symbols": ["pathlib.Path.read_text"], "expected_urls": ["library/pathlib.html"], "notes": "fully-qualified symbol; should be top-1"}
+{"query": "Path.read_text", "query_type": "identifier", "expected_symbols": ["pathlib.Path.read_text"], "expected_urls": ["library/pathlib.html"], "notes": "short name; symbol_index two-segment lookup"}
+{"query": "dict.fromkeys", "query_type": "identifier", "expected_symbols": ["dict.fromkeys"], "expected_urls": ["library/stdtypes.html"]}
+{"query": "os.path.join", "query_type": "identifier", "expected_symbols": ["os.path.join"], "expected_urls": ["library/os.path.html"]}
+{"query": "json.loads", "query_type": "identifier", "expected_symbols": ["json.loads"], "expected_urls": ["library/json.html"]}
+{"query": "re.compile", "query_type": "identifier", "expected_symbols": ["re.compile"], "expected_urls": ["library/re.html"]}
+{"query": "datetime.datetime.now", "query_type": "identifier", "expected_symbols": ["datetime.datetime.now"], "expected_urls": ["library/datetime.html"]}
+{"query": "collections.Counter", "query_type": "identifier", "expected_symbols": ["collections.Counter"], "expected_urls": ["library/collections.html"]}
+{"query": "functools.lru_cache", "query_type": "identifier", "expected_symbols": ["functools.lru_cache"], "expected_urls": ["library/functools.html"]}
+{"query": "itertools.chain", "query_type": "identifier", "expected_symbols": ["itertools.chain"], "expected_urls": ["library/itertools.html"]}
+{"query": "subprocess.run", "query_type": "identifier", "expected_symbols": ["subprocess.run"], "expected_urls": ["library/subprocess.html"]}
+{"query": "io.open", "query_type": "identifier", "expected_symbols": ["io.open"], "expected_urls": ["library/io.html"], "notes": "fully-qualified io.open"}
+{"query": "open", "query_type": "identifier", "expected_symbols": ["open", "io.open", "os.open", "codecs.open", "pathlib.Path.open"], "expected_urls": ["library/functions.html", "library/io.html", "library/os.html", "library/codecs.html", "library/pathlib.html"], "notes": "short-name multi-candidate (plan §4); 31 candidates in 3.12 — accept plan-canonical 4 + pathlib (most common method)"}
+{"query": "how to read a file in python", "query_type": "natural_language", "expected_symbols": ["pathlib.Path.read_text", "io.open", "open"], "expected_urls": ["library/pathlib.html", "library/functions.html", "library/io.html"], "notes": "any of the read paths is fine"}
+{"query": "how to iterate a dictionary safely", "query_type": "natural_language", "expected_symbols": ["dict.items", "dict.keys", "dict.values"], "expected_urls": ["library/stdtypes.html"]}
+{"query": "how to join two paths", "query_type": "natural_language", "expected_symbols": ["os.path.join", "pathlib.PurePath.joinpath"], "expected_urls": ["library/os.path.html", "library/pathlib.html"]}
+{"query": "how to parse json from a string", "query_type": "natural_language", "expected_symbols": ["json.loads"], "expected_urls": ["library/json.html"]}
+{"query": "how to format a date as iso 8601", "query_type": "natural_language", "expected_symbols": ["datetime.date.isoformat", "datetime.datetime.isoformat"], "expected_urls": ["library/datetime.html"]}
+{"query": "how to count occurrences in a list", "query_type": "natural_language", "expected_symbols": ["collections.Counter"], "expected_urls": ["library/collections.html", "library/stdtypes.html"], "notes": "list.count is a common-sequence op (no py-domain symbol); url match keeps stdtypes acceptable"}
+{"query": "how to memoize a function", "query_type": "natural_language", "expected_symbols": ["functools.lru_cache", "functools.cache"], "expected_urls": ["library/functools.html"]}
+{"query": "how to flatten a nested list with itertools", "query_type": "natural_language", "expected_symbols": ["itertools.chain", "itertools.chain.from_iterable"], "expected_urls": ["library/itertools.html"]}
+{"query": "how to compile a regex pattern", "query_type": "natural_language", "expected_symbols": ["re.compile", "re.Pattern"], "expected_urls": ["library/re.html"]}
+{"query": "how to run a shell command from python", "query_type": "natural_language", "expected_symbols": ["subprocess.run", "subprocess.Popen"], "expected_urls": ["library/subprocess.html"]}
+{"query": "what is a context manager in python", "query_type": "natural_language", "expected_symbols": ["contextlib.contextmanager", "contextlib.AbstractContextManager"], "expected_urls": ["library/contextlib.html", "reference/datamodel.html"], "notes": "concept query; glossary.html dropped (0 chunks in v0)"}
+{"query": "how to convert a string to bytes", "query_type": "natural_language", "expected_symbols": ["str.encode", "bytes"], "expected_urls": ["library/stdtypes.html"]}
+{"query": "how to define an enum class", "query_type": "natural_language", "expected_symbols": ["enum.Enum", "enum.IntEnum"], "expected_urls": ["library/enum.html"]}
+{"query": "how to create a temporary file", "query_type": "natural_language", "expected_symbols": ["tempfile.NamedTemporaryFile", "tempfile.TemporaryFile", "tempfile.mkstemp"], "expected_urls": ["library/tempfile.html"]}
+{"query": "how to catch multiple exceptions", "query_type": "natural_language", "expected_symbols": ["BaseException", "Exception"], "expected_urls": ["library/exceptions.html"], "notes": "v0: syntax pages (compound_stmts / tutorial/errors) not chunked; falls back to hierarchy page"}
+{"query": "Path vs os.path", "query_type": "comparison", "expected_symbols": ["pathlib.Path", "os.path"], "expected_urls": ["library/pathlib.html", "library/os.path.html"], "match_policy": "all", "notes": "must surface both modules"}
+{"query": "list vs tuple", "query_type": "comparison", "expected_symbols": ["list", "tuple"], "expected_urls": ["library/stdtypes.html"], "match_policy": "all", "notes": "both built-in sequence types"}
+{"query": "json vs pickle", "query_type": "comparison", "expected_symbols": ["json", "pickle"], "expected_urls": ["library/json.html", "library/pickle.html"], "match_policy": "all", "notes": "serialization comparison"}
+{"query": "dict.fromKeys", "query_type": "identifier", "expected_symbols": ["dict.fromkeys"], "expected_urls": ["library/stdtypes.html"], "notes": "CamelCase typo; tests symbol_index fuzzy + analyzer normalization (plan §1.3 / §5)"}
+{"query": "how to use functools wraps", "query_type": "natural_language", "expected_symbols": ["functools.wraps"], "expected_urls": ["library/functools.html"], "notes": "replaces 'what is a decorator' (concept page glossary not chunked in v0)"}
+{"query": "asyncio coroutines and tasks", "query_type": "natural_language", "expected_symbols": ["asyncio.Task", "asyncio.create_task", "asyncio.gather", "asyncio.TaskGroup"], "expected_urls": ["library/asyncio-task.html"], "notes": "replaces 'what is async and await'; asyncio.run dropped (lives on asyncio-runner.html, off-target)"}
+{"query": "typing.Optional", "query_type": "identifier", "expected_symbols": ["typing.Optional"], "expected_urls": ["library/typing.html"]}
+{"query": "functools.partial", "query_type": "identifier", "expected_symbols": ["functools.partial"], "expected_urls": ["library/functools.html"]}
+{"query": "enum.Enum", "query_type": "identifier", "expected_symbols": ["enum.Enum"], "expected_urls": ["library/enum.html"]}
+{"query": "contextlib.suppress", "query_type": "identifier", "expected_symbols": ["contextlib.suppress"], "expected_urls": ["library/contextlib.html"]}
+{"query": "argparse.ArgumentParser", "query_type": "identifier", "expected_symbols": ["argparse.ArgumentParser"], "expected_urls": ["library/argparse.html"]}
+{"query": "collections.defaultdict", "query_type": "identifier", "expected_symbols": ["collections.defaultdict"], "expected_urls": ["library/collections.html"]}
+{"query": "tempfile.gettempdir", "query_type": "identifier", "expected_symbols": ["tempfile.gettempdir"], "expected_urls": ["library/tempfile.html"]}
+{"query": "shutil.copyfile", "query_type": "identifier", "expected_symbols": ["shutil.copyfile"], "expected_urls": ["library/shutil.html"]}
+{"query": "statistics.mean", "query_type": "identifier", "expected_symbols": ["statistics.mean"], "expected_urls": ["library/statistics.html"]}
+{"query": "urllib.parse.urlparse", "query_type": "identifier", "expected_symbols": ["urllib.parse.urlparse"], "expected_urls": ["library/urllib.parse.html"]}
+{"query": "list comprehension vs map", "query_type": "comparison", "expected_symbols": ["map"], "expected_urls": ["library/functions.html", "reference/expressions.html"], "notes": "comparison; list comprehensions covered in tutorial/reference", "match_policy": "all"}
+{"query": "deque vs list", "query_type": "comparison", "expected_symbols": ["collections.deque", "list"], "expected_urls": ["library/collections.html", "library/stdtypes.html"], "match_policy": "all"}
+{"query": "set vs frozenset", "query_type": "comparison", "expected_symbols": ["set", "frozenset"], "expected_urls": ["library/stdtypes.html"], "match_policy": "all"}
+{"query": "yield vs return", "query_type": "comparison", "expected_symbols": [], "expected_urls": ["reference/simple_stmts.html", "reference/expressions.html"], "notes": "yield is a statement / expression, not a function symbol"}
+{"query": "is vs ==", "query_type": "comparison", "expected_symbols": [], "expected_urls": ["reference/expressions.html"], "notes": "operator semantics; expected_symbols empty since these are operators"}
+{"query": "args vs kwargs", "query_type": "comparison", "expected_symbols": [], "expected_urls": ["reference/compound_stmts.html", "tutorial/controlflow.html", "reference/expressions.html"], "notes": "function definition syntax"}
+{"query": "shallow copy vs deep copy", "query_type": "comparison", "expected_symbols": ["copy.copy", "copy.deepcopy"], "expected_urls": ["library/copy.html"], "match_policy": "all"}
+{"query": "threading vs multiprocessing", "query_type": "comparison", "expected_symbols": ["threading", "multiprocessing"], "expected_urls": ["library/threading.html", "library/multiprocessing.html"], "match_policy": "all"}
+{"query": "generator vs list", "query_type": "comparison", "expected_symbols": [], "expected_urls": ["reference/expressions.html", "library/stdtypes.html"], "notes": "generator expression vs list comprehension", "match_policy": "all"}
+{"query": "staticmethod vs classmethod", "query_type": "comparison", "expected_symbols": ["staticmethod", "classmethod"], "expected_urls": ["library/functions.html"], "match_policy": "all"}
+{"query": "dataclass vs NamedTuple", "query_type": "comparison", "expected_symbols": ["dataclasses.dataclass", "typing.NamedTuple"], "expected_urls": ["library/dataclasses.html", "library/typing.html"], "match_policy": "all"}
+{"query": "abstract base class vs Protocol", "query_type": "comparison", "expected_symbols": ["abc.ABC", "typing.Protocol"], "expected_urls": ["library/abc.html", "library/typing.html"], "match_policy": "all"}
+{"query": "TypedDict vs dataclass", "query_type": "comparison", "expected_symbols": ["typing.TypedDict", "dataclasses.dataclass"], "expected_urls": ["library/typing.html", "library/dataclasses.html"], "match_policy": "all"}
+{"query": "asyncio.gather vs asyncio.wait", "query_type": "comparison", "expected_symbols": ["asyncio.gather", "asyncio.wait"], "expected_urls": ["library/asyncio-task.html"], "match_policy": "all"}
+{"query": "pathlib.PurePath vs pathlib.Path", "query_type": "comparison", "expected_symbols": ["pathlib.PurePath", "pathlib.Path"], "expected_urls": ["library/pathlib.html"], "match_policy": "all"}
+{"query": "time.sleep vs asyncio.sleep", "query_type": "comparison", "expected_symbols": ["time.sleep", "asyncio.sleep"], "expected_urls": ["library/time.html", "library/asyncio-task.html"], "match_policy": "all"}
+{"query": "how to sort a dict by value", "query_type": "howto", "expected_symbols": ["sorted", "dict.items"], "expected_urls": ["library/functions.html", "library/stdtypes.html"]}
+{"query": "how to merge two dicts", "query_type": "howto", "expected_symbols": ["dict.update"], "expected_urls": ["library/stdtypes.html"], "notes": "Python 3.9+ also supports the | operator"}
+{"query": "how to remove duplicates from a list preserving order", "query_type": "howto", "expected_symbols": ["dict.fromkeys"], "expected_urls": ["library/stdtypes.html"]}
+{"query": "how to read environment variables", "query_type": "howto", "expected_symbols": ["os.environ", "os.getenv"], "expected_urls": ["library/os.html"]}
+{"query": "how to handle command line arguments", "query_type": "howto", "expected_symbols": ["argparse.ArgumentParser", "sys.argv"], "expected_urls": ["library/argparse.html", "library/sys.html"]}
+{"query": "how to write a unit test with unittest", "query_type": "howto", "expected_symbols": ["unittest.TestCase"], "expected_urls": ["library/unittest.html"]}
+{"query": "how to extract groups from a regex match", "query_type": "howto", "expected_symbols": ["re.Match.group", "re.search"], "expected_urls": ["library/re.html"]}
+{"query": "how to time a function execution", "query_type": "howto", "expected_symbols": ["time.perf_counter", "timeit.timeit"], "expected_urls": ["library/time.html", "library/timeit.html"]}
+{"query": "how to log to a file", "query_type": "howto", "expected_symbols": ["logging.FileHandler", "logging.basicConfig"], "expected_urls": ["library/logging.html", "library/logging.handlers.html"]}
+{"query": "how to send an HTTP GET request", "query_type": "howto", "expected_symbols": ["urllib.request.urlopen"], "expected_urls": ["library/urllib.request.html"]}
+{"query": "how to URL encode a string", "query_type": "howto", "expected_symbols": ["urllib.parse.quote", "urllib.parse.urlencode"], "expected_urls": ["library/urllib.parse.html"]}
+{"query": "how to read a CSV file", "query_type": "howto", "expected_symbols": ["csv.reader", "csv.DictReader"], "expected_urls": ["library/csv.html"]}
+{"query": "how to write JSON to a file", "query_type": "howto", "expected_symbols": ["json.dump"], "expected_urls": ["library/json.html"]}
+{"query": "how to parse a date string", "query_type": "howto", "expected_symbols": ["datetime.datetime.strptime", "datetime.date.fromisoformat"], "expected_urls": ["library/datetime.html"]}
+{"query": "how to compute file size", "query_type": "howto", "expected_symbols": ["os.path.getsize", "pathlib.Path.stat"], "expected_urls": ["library/os.path.html", "library/pathlib.html"]}
+{"query": "how to walk a directory tree", "query_type": "howto", "expected_symbols": ["os.walk", "pathlib.Path.rglob"], "expected_urls": ["library/os.html", "library/pathlib.html"]}
+{"query": "how to compress a file with gzip", "query_type": "howto", "expected_symbols": ["gzip.open"], "expected_urls": ["library/gzip.html"]}
+{"query": "how to base64 encode a string", "query_type": "howto", "expected_symbols": ["base64.b64encode"], "expected_urls": ["library/base64.html"]}
+{"query": "how to use a thread pool", "query_type": "howto", "expected_symbols": ["concurrent.futures.ThreadPoolExecutor"], "expected_urls": ["library/concurrent.futures.html"]}
+{"query": "how to generate a uuid", "query_type": "howto", "expected_symbols": ["uuid.uuid4"], "expected_urls": ["library/uuid.html"]}
+{"query": "how to deep copy an object", "query_type": "howto", "expected_symbols": ["copy.deepcopy"], "expected_urls": ["library/copy.html"]}
+{"query": "how do I read a large text file line by line without loading the whole thing into memory in python", "query_type": "natural_language", "expected_symbols": ["open"], "expected_urls": ["library/functions.html", "library/io.html"], "notes": "long query; idiomatic answer is iterate over the file object"}
+{"query": "what is the best way to handle a configuration file that may or may not exist when starting up an application", "query_type": "natural_language", "expected_symbols": ["pathlib.Path.exists", "configparser.ConfigParser"], "expected_urls": ["library/pathlib.html", "library/configparser.html"]}
+{"query": "if I have a function that returns multiple values how should I unpack them and what happens if the function signature changes", "query_type": "natural_language", "expected_symbols": [], "expected_urls": ["reference/simple_stmts.html", "tutorial/datastructures.html", "reference/expressions.html"], "notes": "long query; expected_symbols empty (tuple unpacking is syntax)"}
+{"query": "explain the difference between a thread pool and a process pool when running independent CPU bound tasks", "query_type": "comparison", "expected_symbols": ["concurrent.futures.ThreadPoolExecutor", "concurrent.futures.ProcessPoolExecutor"], "expected_urls": ["library/concurrent.futures.html"], "notes": "long comparison query", "match_policy": "all"}
+{"query": "I have a list of dictionaries and I want to group them by a specific key what is the standard library way to do this", "query_type": "natural_language", "expected_symbols": ["itertools.groupby", "collections.defaultdict"], "expected_urls": ["library/itertools.html", "library/collections.html"], "notes": "long query"}
+{"query": "given a string with mixed unicode characters how do I normalize it before comparing or hashing", "query_type": "natural_language", "expected_symbols": ["unicodedata.normalize"], "expected_urls": ["library/unicodedata.html"], "notes": "long query"}
+{"query": "what is the recommended way to download a file from the internet and save it to disk", "query_type": "natural_language", "expected_symbols": ["urllib.request.urlretrieve", "urllib.request.urlopen"], "expected_urls": ["library/urllib.request.html"], "notes": "long query"}
+{"query": "I want to monitor a directory for new files being added and process them as they appear", "query_type": "natural_language", "expected_symbols": ["os.listdir", "pathlib.Path.iterdir"], "expected_urls": ["library/os.html", "library/pathlib.html"], "notes": "long query; stdlib has no native fsnotify; common stdlib answer is polling"}
+{"query": "given a complex nested dict structure how do I safely access deeply nested keys without raising KeyError", "query_type": "natural_language", "expected_symbols": ["dict.get"], "expected_urls": ["library/stdtypes.html"], "notes": "long query"}
+{"query": "I am writing a long-running script and want to handle SIGINT gracefully so files get flushed before exit", "query_type": "natural_language", "expected_symbols": ["signal.signal", "signal.SIGINT"], "expected_urls": ["library/signal.html"], "notes": "long query"}
+{"query": "how do I run a piece of code only if the module is being executed directly and not imported as a library", "query_type": "natural_language", "expected_symbols": [], "expected_urls": ["tutorial/modules.html", "library/__main__.html"], "notes": "long query; the idiom is `if __name__ == '__main__':`"}
+{"query": "pathlib.Path.raed_text", "query_type": "identifier", "expected_symbols": ["pathlib.Path.read_text"], "expected_urls": ["library/pathlib.html"], "notes": "typo: raed \u2192 read"}
+{"query": "dict.fromkeyss", "query_type": "identifier", "expected_symbols": ["dict.fromkeys"], "expected_urls": ["library/stdtypes.html"], "notes": "typo: extra trailing s"}
+{"query": "os.path.joi", "query_type": "identifier", "expected_symbols": ["os.path.join"], "expected_urls": ["library/os.path.html"], "notes": "typo: missing trailing n"}
+{"query": "json.load", "query_type": "identifier", "expected_symbols": ["json.load"], "expected_urls": ["library/json.html"], "notes": "json.load is the file-version; common confusion with json.loads (string version)"}
+{"query": "datime.datetime.now", "query_type": "identifier", "expected_symbols": ["datetime.datetime.now"], "expected_urls": ["library/datetime.html"], "notes": "typo: datime \u2192 datetime"}
+{"query": "re.complie", "query_type": "identifier", "expected_symbols": ["re.compile"], "expected_urls": ["library/re.html"], "notes": "typo: complie \u2192 compile"}
+{"query": "itertool.chain", "query_type": "identifier", "expected_symbols": ["itertools.chain"], "expected_urls": ["library/itertools.html"], "notes": "typo: itertool \u2192 itertools"}
+{"query": "tempflie.NamedTemporaryFile", "query_type": "identifier", "expected_symbols": ["tempfile.NamedTemporaryFile"], "expected_urls": ["library/tempfile.html"], "notes": "typo: tempflie \u2192 tempfile"}
+{"query": "subprocess.runn", "query_type": "identifier", "expected_symbols": ["subprocess.run"], "expected_urls": ["library/subprocess.html"], "notes": "typo: extra trailing n"}
+{"query": "Path.read text", "query_type": "identifier", "expected_symbols": ["pathlib.Path.read_text"], "expected_urls": ["library/pathlib.html"], "notes": "typo: space instead of underscore"}
+{"query": "asyncio.create_task", "query_type": "identifier", "expected_symbols": ["asyncio.create_task"], "expected_urls": ["library/asyncio-task.html"]}
+{"query": "asyncio.TaskGroup", "query_type": "identifier", "expected_symbols": ["asyncio.TaskGroup"], "expected_urls": ["library/asyncio-task.html"]}
+{"query": "how to run multiple async tasks concurrently", "query_type": "howto", "expected_symbols": ["asyncio.gather", "asyncio.TaskGroup"], "expected_urls": ["library/asyncio-task.html"]}
+{"query": "how to cancel an asyncio task with timeout", "query_type": "howto", "expected_symbols": ["asyncio.wait_for", "asyncio.timeout"], "expected_urls": ["library/asyncio-task.html"]}
+{"query": "typing.Literal", "query_type": "identifier", "expected_symbols": ["typing.Literal"], "expected_urls": ["library/typing.html"]}
+{"query": "typing.Callable", "query_type": "identifier", "expected_symbols": ["typing.Callable"], "expected_urls": ["library/typing.html"]}
+{"query": "typing.Annotated", "query_type": "identifier", "expected_symbols": ["typing.Annotated"], "expected_urls": ["library/typing.html"]}
+{"query": "Union vs Optional", "query_type": "comparison", "expected_symbols": ["typing.Union", "typing.Optional"], "expected_urls": ["library/typing.html"], "match_policy": "all", "notes": "both expected; Optional[X] is sugar for Union[X, None]"}
+{"query": "json.loadss", "query_type": "identifier", "expected_symbols": ["json.loads"], "expected_urls": ["library/json.html"], "notes": "typo: extra trailing s on loads"}
