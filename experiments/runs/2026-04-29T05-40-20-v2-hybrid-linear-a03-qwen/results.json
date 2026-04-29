@@ -1,0 +1,61 @@
+{
+  "docs_version": "3.12",
+  "docs_served_version": "3.12.13",
+  "docs_sha_short": "a5c1a35a5a02",
+  "ingest_manifest": {
+    "docs_version": "3.12",
+    "docs_served_version": "3.12.13",
+    "docs_url": "https://docs.python.org/3.12/archives/python-3.12-docs-html.tar.bz2",
+    "docs_archive_sha256": "a5c1a35a5a0281ea680b714fb6de853dc2a3f813c24773828851ec6d1b8099da",
+    "ingest_timestamp": "2026-04-25T09:55:36Z"
+  },
+  "config": {
+    "retriever": "hybrid-linear",
+    "k": 10,
+    "eval_set": "eval_sets/v2_full.jsonl",
+    "alpha": 0.3,
+    "rerank": false,
+    "rerank_candidates": null
+  },
+  "tag": "v2-hybrid-linear-a03-qwen",
+  "command": "/Users/michaeltan/Desktop/training/python-doc-assistant/.venv/bin/pdr eval --set eval_sets/v2_full.jsonl --tag v2-hybrid-linear-a03-qwen --retriever hybrid-linear --alpha 0.3 --model Qwen/Qwen2.5-1.5B-Instruct",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "decoding_params": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512
+  },
+  "recall_at_5": 0.7927927927927928,
+  "recall_at_10": 0.9009009009009009,
+  "mrr": 0.6836255373020081,
+  "n_queries": 111,
+  "judge": {
+    "judge_model": "claude-haiku-4-5-20251001",
+    "judge_prompt_hash": "65fa23b9",
+    "temperature": 0.0,
+    "max_tokens": 200,
+    "n_records": 110,
+    "n_errors": 1,
+    "timestamp_started": "2026-04-29T08:01:16.378205+00:00",
+    "timestamp_completed": "2026-04-29T08:29:32.244459+00:00"
+  },
+  "judge_aggregate": {
+    "n": 110,
+    "tier_counts": {
+      "correct": 14,
+      "partial": 62,
+      "wrong": 8,
+      "hallucination": 25,
+      "refused": 1
+    },
+    "tier_rates": {
+      "correct": 0.12727272727272726,
+      "partial": 0.5636363636363636,
+      "wrong": 0.07272727272727272,
+      "hallucination": 0.22727272727272727,
+      "refused": 0.00909090909090909
+    },
+    "hallucination_rate": 0.22727272727272727,
+    "correct_rate": 0.12727272727272726
+  }
+}

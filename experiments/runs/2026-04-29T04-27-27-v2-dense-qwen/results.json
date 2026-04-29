@@ -14,48 +14,48 @@
     "k": 10,
     "eval_set": "eval_sets/v2_full.jsonl",
     "alpha": null,
-    "rerank": true,
-    "rerank_candidates": 20
+    "rerank": false,
+    "rerank_candidates": null
   },
-  "tag": "v2-dense-rerank-qwen",
-  "command": "/Users/michaeltan/Desktop/training/python-doc-assistant/.venv/bin/pdr eval --set eval_sets/v2_full.jsonl --tag v2-dense-rerank-qwen --retriever dense --rerank --model Qwen/Qwen2.5-1.5B-Instruct",
+  "tag": "v2-dense-qwen",
+  "command": "/Users/michaeltan/Desktop/training/python-doc-assistant/.venv/bin/pdr eval --set eval_sets/v2_full.jsonl --tag v2-dense-qwen --retriever dense --model Qwen/Qwen2.5-1.5B-Instruct",
   "model": "Qwen/Qwen2.5-1.5B-Instruct",
   "decoding_params": {
     "temperature": 0.0,
     "top_p": 1.0,
     "max_new_tokens": 512
   },
-  "recall_at_5": 0.8378378378378378,
+  "recall_at_5": 0.8018018018018018,
   "recall_at_10": 0.8828828828828829,
-  "mrr": 0.7051658801658804,
+  "mrr": 0.6815672815672816,
   "n_queries": 111,
   "judge": {
     "judge_model": "claude-haiku-4-5-20251001",
     "judge_prompt_hash": "65fa23b9",
     "temperature": 0.0,
     "max_tokens": 200,
-    "n_records": 111,
-    "n_errors": 0,
-    "timestamp_started": "2026-04-29T06:23:12.748053+00:00",
-    "timestamp_completed": "2026-04-29T06:44:27.358252+00:00"
+    "n_records": 109,
+    "n_errors": 2,
+    "timestamp_started": "2026-04-29T07:39:03.534327+00:00",
+    "timestamp_completed": "2026-04-29T08:01:13.487041+00:00"
   },
   "judge_aggregate": {
-    "n": 111,
+    "n": 109,
     "tier_counts": {
-      "correct": 7,
-      "partial": 69,
-      "wrong": 9,
-      "hallucination": 24,
-      "refused": 2
+      "correct": 12,
+      "partial": 62,
+      "wrong": 12,
+      "hallucination": 23,
+      "refused": 0
     },
     "tier_rates": {
-      "correct": 0.06306306306306306,
-      "partial": 0.6216216216216216,
-      "wrong": 0.08108108108108109,
-      "hallucination": 0.21621621621621623,
-      "refused": 0.018018018018018018
+      "correct": 0.11009174311926606,
+      "partial": 0.5688073394495413,
+      "wrong": 0.11009174311926606,
+      "hallucination": 0.21100917431192662,
+      "refused": 0.0
     },
-    "hallucination_rate": 0.21621621621621623,
-    "correct_rate": 0.06306306306306306
+    "hallucination_rate": 0.21100917431192662,
+    "correct_rate": 0.11009174311926606
   }
 }
