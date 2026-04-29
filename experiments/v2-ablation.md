@@ -349,6 +349,27 @@ The 4 remaining systematic disagreements:
   v3 work can switch to Sonnet or extend the prompt with more shots
   if absolute calibration becomes important.
 
+### Parse-error rows (n=3 / 666 = 0.45%)
+
+Three rows across the 6 generation runs failed Haiku JSON parsing
+(`Invalid json: Expecting ',' delimiter` or `Extra data`). Haiku
+occasionally appended prose around the JSON or emitted a malformed
+field separator despite the prompt's "JSON only" instruction —
+LLM-as-judge format tax, not query-content-driven (errors span all 3
+relevant query types):
+
+| Run | Row | Query | Type | Output len | Error |
+|---|---:|---|---|---:|---|
+| `dense-qwen` | 36 | `functools.partial` | identifier | 924 | Expecting `,` |
+| `dense-qwen` | 58 | `asyncio.gather vs asyncio.wait` | comparison | 1517 | Extra data |
+| `hybrid-linear-a03-qwen` | 26 | `how to define an enum class` | natural_language | 375 | Expecting `,` |
+
+These rows are excluded from `n` in their respective `judge_aggregate`
+(n=109 / 110 / 111). 0.45% loss does not move §7 / §8 conclusions.
+Mitigation for v3+ judge runs (Opus 4.7 copy-paste workflow): stricter
+"output ONLY JSON" instruction in prompt + persist parse-fails to a
+sibling `judge_errors.jsonl` for audit instead of stderr-only.
+
 ## §7 — Narrative answers
 
 Plan §7 mandates direct answers to four questions. Retrieval-only
@@ -520,7 +541,7 @@ ceiling, not retrieval.
 | **P0** | **Generator upgrade** (1.5B Instruct → 7B Coder, or API-grade Sonnet-class) | All retrieval lifts are absorbed into a flat ~21-23% hallucination plateau. Best retrieval (`dense+rerank` Recall@5 = 0.838) yields the **lowest** correct_rate (6.3%) because Qwen 1.5B prefers broader section_chunks over precise symbol_chunks. **The generator cannot exploit better retrieval at this size.** | High — 7B needs ~14 GB VRAM (MPS infeasible fp16, needs quantization or API) | §6 judge data: halluc 21.1%-25.2% on all 6 configs, well above the 10% bar v1 §142 set; hard signal that swap is required |
 | **P1** | **Module-level → method-level cite preference** (chunker re-cut + prompt nudge) | Strongest sub-signal in §6 data: `dense+rerank` correct_rate = 6.3% vs `symbol+bm25` correct_rate = 18.9% on the **same** generator. Better retrieval chunks land in the prompt but the model picks the broad section_chunk. Chunker fix: split section_chunks that wholly contain symbol_chunks; prompt fix: "prefer specific over general". | Low — chunker boundary tweak + 1 line in prompt + re-eval on v2_full | §6 judge confirms magnitude across 6 configs (correct_rate degrades monotonically with how many section_chunks the retriever surfaces) |
 | **P2** | **Routing-aware retriever** (BM25 for identifier, dense for NL/howto) | New §6 finding: `symbol+bm25` has **highest correct_rate (18.9%)** but worst halluc (25.2%); `dense` has **lowest halluc (21.1%)** but lower correct (11.0%). A router that picks per-query-type could combine BM25's bold-on-hits with dense's safer-on-NL. v0 already has a basic identifier vs NL router; this would extend it. | Low-Medium — router rule + per-query-type metric report | §6 cross-config table shows clear correct_rate / halluc tradeoff between bm25 and dense |
-| **P3** | **Out-of-scope expansion in eval set** | v2_full has 0 OOS rows. v2 refused_rate is 0-2.7% across all 6 configs, but unverified at scale. Required before v4 prod-ready: refusal calibration is a customer-facing safety metric. | Low — extend `eval_sets/v1_out_of_scope_20.jsonl` to 40+ rows + mix into v3+ main set | none — independent of generator choice |
+| **P3** | **Out-of-scope expansion in eval set** | v2_full has 0 OOS rows. v2 refused_rate is 0-2.7% across all 6 configs, but unverified at scale. Refusal calibration is a customer-facing safety metric and a prerequisite for any future production-track work. | Low — extend `eval_sets/v1_out_of_scope_20.jsonl` to 40+ rows + mix into v3+ main set | none — independent of generator choice |
 | **P4** | **Query decomposition for `match_policy=all` comparison** | Comparison rows = 24/111 in v2_full. Multi-hop retrieval (decompose "json vs pickle" → 2 retrievals → merge) plausibly helps but §6 data does not show a comparison-specific failure cluster — gains may be marginal. | Medium — router rule + retrieval orchestration + new eval policy | re-evaluate after P0 + per-query-type triage |
 
 ### Deferred (lower expected ROI)
@@ -534,13 +555,13 @@ ceiling, not retrieval.
 
 1. **Does rerank reduce hallucination, or just shuffle rank?** → **Just shuffles rank.** `dense → dense+rerank` halluc is **+0.5 pp (worse)**; `hybrid-rrf → +rerank` halluc is 0 pp. P4 (reranker swap) deprioritized to Deferred.
 2. **Is BM25's identifier-exact win reducing hallucination, or just citing-correct-chunk-elsewhere?** → **Mixed story.** BM25 has highest correct (18.9%) but highest halluc (25.2%) — bold strategy with high variance. Routing strategy (P2 above) likely captures the wins without the variance.
-3. **Does Recall@5 = 0.838 ceiling leave headroom?** → **18/111 queries miss top-5; 13.4% of n.** But triage shows: even on the 93 hits, generation accuracy is only 67-69%. **Generation improvements (P0/P1) dominate retrieval improvements** at this point. (`scripts/triage_failures.py` for v4.)
+3. **Does Recall@5 = 0.838 ceiling leave headroom?** → **18/111 queries miss top-5; 13.4% of n.** But triage shows: even on the 93 hits, generation accuracy is only 67-69%. **Generation improvements (P0/P1) dominate retrieval improvements** at this point.
 
-### v3 vs v4 implications
+### Implications for v3 and the next stage
 
-The data make the v3 (research) / v4 (prod-ready) split clearer:
+The data sharpen the role of v3 vs any subsequent production-oriented stage:
 
-- **v3 = self-train tiny LLM**: research-only learning, will not improve numbers (50M model < 1.5B Qwen). No bearing on §8 P0-P4.
-- **v4 = prod-ready accuracy**: P0 (generator upgrade — likely Claude API per `tmp/plans/v4-prod-ready.md`) is the sole high-leverage move. P1 + P2 are stacking gains on top.
+- **v3 = self-train tiny LLM** (`plans/v3-tiny-llm.md`): research-only learning side track. A 50M-100M model will not exceed Qwen 1.5B on accuracy — no bearing on §8 P0-P4 priorities.
+- **Next stage (production-track)**: P0 (generator upgrade to a 7B+ open model or an API-grade model) is the sole high-leverage move; P1 (chunker re-cut) + P2 (routing-aware retriever) are stacking gains on top. A separate plan document will be drafted when this track is opened.
 
-If only one track is pursued, v4 P0 dominates v3 entirely on accuracy goal.
+If only one track is pursued, the production-track P0 dominates v3 entirely on accuracy goal.
