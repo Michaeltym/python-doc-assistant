@@ -14,6 +14,7 @@ import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -313,6 +314,244 @@ def ask(
             for cid in answer.cited_chunk_ids:
                 in_set = "yes" if cid in retrieved_ids else "no (not in top-K)"
                 click.echo(f"  cited={cid}  in_retrieved={in_set}")
+
+
+# ------------------------------------------------------------------
+# Subcommand: judge (plan v2 §6)
+# ------------------------------------------------------------------
+
+
+@main.command(name="judge")
+@click.option(
+    "--run-dir",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Path to a run dir (must contain per_query.jsonl + results.json).",
+)
+@click.option(
+    "--judge-model",
+    default="claude-haiku-4-5-20251001",
+    help="Anthropic model id used for scoring.",
+)
+@click.option("--temperature", type=float, default=0.0)
+@click.option("--max-tokens", type=int, default=200)
+@click.option(
+    "--max-rows",
+    type=int,
+    default=None,
+    help="Truncate to first N rows (smoke / cost cap).",
+)
+@click.option(
+    "--rerun-existing",
+    is_flag=True,
+    help="Re-judge even if `<run-dir>/judge_scores.jsonl` exists.",
+)
+def judge_cmd(
+    run_dir: Path,
+    judge_model: str,
+    temperature: float,
+    max_tokens: int,
+    max_rows: int | None,
+    rerun_existing: bool,
+) -> None:
+    """Score every per_query.jsonl row with an LLM judge (plan v2 §6).
+
+    Workflow:
+        1. Loads `run_dir/per_query.jsonl` (one row per evaluated query).
+        2. Loads `data/chunks/<docs_version>/<docs_sha>/chunks.jsonl` so
+           the judge prompt can include retrieved chunk TEXT (not just
+           ids). docs_version + docs_sha are read from
+           `run_dir/results.json`.
+        3. For each row, calls `evaluation.judge.judge_one(...)` →
+           Anthropic API → parsed `JudgeRecord`.
+        4. Writes `run_dir/judge_scores.jsonl` (full JudgeRecord per
+           row; reproducibility metadata included).
+        5. Updates `run_dir/results.json` with two new top-level keys:
+              "judge"           — model_id / judge_prompt_hash /
+                                  temperature / max_tokens / n_records /
+                                  n_errors / timestamp_started /
+                                  timestamp_completed
+              "judge_aggregate" — output of `evaluation.human_scoring.aggregate()`
+                                  on the parsed tiers.
+
+    Skips silently when `judge_scores.jsonl` already exists, unless
+    `--rerun-existing` is passed.
+
+    Suggested implementation flow (your code goes in here):
+
+        # Skip-existing gate
+        out_path = run_dir / "judge_scores.jsonl"
+        if out_path.exists() and not rerun_existing:
+            click.echo(f"SKIP — {out_path.name} exists; pass --rerun-existing")
+            return
+
+        # Lazy-import so v0 / no-judge-extra paths still import this module.
+        import anthropic
+        from python_doc_assistant.evaluation.judge import (
+            JudgeError, judge_one, judge_prompt_hash,
+            judge_records_to_human_scores, write_judge_records,
+        )
+        from python_doc_assistant.evaluation.human_scoring import aggregate
+
+        # Load run metadata to find the chunks.jsonl
+        results_path = run_dir / "results.json"
+        results = json.loads(results_path.read_text(encoding="utf-8"))
+        chunks_path = (
+            DEFAULT_DATA_ROOT / "chunks" / results["docs_version"]
+            / results["docs_sha_short"] / "chunks.jsonl"
+        )
+        chunks_by_id = {c.chunk_id: c for c in _load_chunks(chunks_path)}
+
+        # Read per_query.jsonl rows (truncate if --max-rows)
+        rows = ... read run_dir / "per_query.jsonl" line-by-line ...
+        if max_rows:
+            rows = rows[:max_rows]
+
+        # Loop with API client + collect records
+        client = anthropic.Anthropic()
+        records, errors = [], 0
+        from datetime import datetime, timezone
+        started = datetime.now(timezone.utc).isoformat()
+        for i, row in enumerate(rows, start=1):
+            retrieved_ids = [r["chunk_id"] for r in row.get("retrieved", [])][:5]
+            retrieved_chunks = [
+                chunks_by_id[cid] for cid in retrieved_ids if cid in chunks_by_id
+            ]
+            try:
+                rec = judge_one(
+                    query=row["query"],
+                    expected_symbols=tuple(row.get("expected_symbols") or ()),
+                    retrieved_chunks=retrieved_chunks,
+                    cited_chunk_ids=tuple(row.get("cited_chunk_ids") or ()),
+                    refused=bool(row.get("refused")),
+                    model_output_text=row.get("model_output_text") or "",
+                    client=client,
+                    model_id=judge_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                records.append(rec)
+            except JudgeError as exc:
+                errors += 1
+                click.echo(f"  parse-fail row {i}: {exc}")
+
+        completed = datetime.now(timezone.utc).isoformat()
+
+        # Write JudgeRecord JSONL + update results.json
+        write_judge_records(records, out_path)
+        agg = aggregate(judge_records_to_human_scores(records))
+        results["judge"] = {
+            "judge_model": judge_model,
+            "judge_prompt_hash": judge_prompt_hash(),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "n_records": len(records),
+            "n_errors": errors,
+            "timestamp_started": started,
+            "timestamp_completed": completed,
+        }
+        results["judge_aggregate"] = agg
+        results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+
+        click.echo(
+            f"hallucination_rate={agg['hallucination_rate']:.3f}  "
+            f"correct_rate={agg['correct_rate']:.3f}  "
+            f"n_records={len(records)}  n_errors={errors}"
+        )
+        click.echo(f"out: {out_path}")
+    """
+    judge_scores_path = run_dir / "judge_scores.jsonl"
+    per_query_path = run_dir / "per_query.jsonl"
+    results_path = run_dir / "results.json"
+    if not rerun_existing and judge_scores_path.exists():
+        click.echo(f"SKIP: {judge_scores_path} exists")
+        return
+    if not results_path.exists():
+        raise FileNotFoundError(f"{results_path} does not exist")
+    with results_path.open("r", encoding="utf-8") as f:
+        results = json.load(f)
+    docs_version = results["docs_version"]
+    docs_sha_short = results["docs_sha_short"]
+    chunks_path = DEFAULT_DATA_ROOT / "chunks" / docs_version / docs_sha_short / "chunks.jsonl"
+    chunks = _load_chunks(chunks_path)
+    import anthropic
+
+    from python_doc_assistant.evaluation.human_scoring import aggregate
+    from python_doc_assistant.evaluation.judge import (
+        JudgeError,
+        JudgeRecord,
+        judge_one,
+        judge_prompt_hash,
+        judge_records_to_human_scores,
+        write_judge_records,
+    )
+
+    records: list[JudgeRecord] = []
+    errors = 0
+    client = anthropic.Anthropic()
+    chunks_by_id = {c.chunk_id: c for c in chunks}
+    if not per_query_path.exists():
+        raise FileNotFoundError(f"{per_query_path} does not exist")
+    started = datetime.now(timezone.utc).isoformat()
+    with per_query_path.open("r", encoding="utf-8") as f:
+        for index, line in enumerate(f, start=1):
+            if max_rows is not None and index > max_rows:
+                break
+            stripped_line = line.strip()
+            if not stripped_line:
+                continue
+            obj = json.loads(stripped_line)
+            if not isinstance(obj, dict):
+                raise ValueError(f"Line {index}: invalid json object")
+            query = obj["query"]
+            expected_symbols = obj["expected_symbols"]
+            retrieved_chunks = [
+                chunks_by_id[r["chunk_id"]]
+                for r in obj.get("retrieved", [])
+                if r["chunk_id"] in chunks_by_id
+            ]
+            cited_chunk_ids = obj["cited_chunk_ids"]
+            refused = obj["refused"]
+            model_output_text = obj["model_output_text"]
+            try:
+                record = judge_one(
+                    query,
+                    expected_symbols,
+                    retrieved_chunks,
+                    cited_chunk_ids,
+                    refused,
+                    model_output_text,
+                    client=client,
+                    model_id=judge_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                records.append(record)
+            except JudgeError as e:
+                errors += 1
+                click.echo(f"parse-fail line {index}: {e}")
+
+    write_judge_records(records, judge_scores_path)
+    judge_agg = aggregate(judge_records_to_human_scores(records))
+    results["judge"] = {
+        "judge_model": judge_model,
+        "judge_prompt_hash": judge_prompt_hash(),
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "n_records": len(records),
+        "n_errors": errors,
+        "timestamp_started": started,
+        "timestamp_completed": datetime.now(timezone.utc).isoformat(),
+    }
+    results["judge_aggregate"] = judge_agg
+    with results_path.open("w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    click.echo(
+        f"hallucination_rate={judge_agg['hallucination_rate']:.3f}  "
+        f"correct_rate={judge_agg['correct_rate']:.3f}  "
+        f"n_records={len(records)}  n_errors={errors}"
+    )
+    click.echo(f"out: {results_path}")
 
 
 # ------------------------------------------------------------------

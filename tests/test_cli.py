@@ -334,6 +334,277 @@ def _setup_index_artifacts(tmp_path: Path, sha: str = "abcdef123456") -> None:
 
 
 # ------------------------------------------------------------------
+# CLI: judge (plan v2 §6)
+# ------------------------------------------------------------------
+
+
+def _judge_run_dir(tmp_path: Path, *, with_judge_scores: bool = False) -> Path:
+    """Build a minimal run dir for `pdr judge` tests.
+
+    Layout:
+        run_dir/
+          results.json        (docs_version + docs_sha_short + ablation fields)
+          per_query.jsonl     (1 row by default; tests can append)
+          judge_scores.jsonl  (optional, only when with_judge_scores=True)
+    """
+    run_dir = tmp_path / "experiments" / "runs" / "ts-judge-test"
+    run_dir.mkdir(parents=True)
+
+    import json as _json
+
+    results = {
+        "docs_version": "3.12",
+        "docs_served_version": "3.12.13",
+        "docs_sha_short": "abcdef123456",
+        "ingest_manifest": {},
+        "config": {"retriever": "dense", "k": 10, "eval_set": "v2_full.jsonl"},
+        "tag": "v2-dense-qwen",
+        "command": "pdr eval ...",
+        "model": "Qwen/Qwen2.5-1.5B-Instruct",
+        "decoding_params": {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 512},
+        "recall_at_5": 0.802,
+        "recall_at_10": 0.883,
+        "mrr": 0.682,
+        "n_queries": 1,
+    }
+    (run_dir / "results.json").write_text(_json.dumps(results, indent=2), encoding="utf-8")
+
+    retrieved_chunk = {
+        "chunk_id": "symbol:pathlib.Path.read_text",
+        "score": 0.9,
+        "rank": 1,
+        "canonical_url": "library/pathlib.html#pathlib.Path.read_text",
+        "symbols": ["pathlib.Path.read_text"],
+    }
+    per_query = [
+        {
+            "query": "pathlib.Path.read_text",
+            "query_type": "identifier",
+            "match_policy": "any",
+            "url_match": "strip_anchor",
+            "expected_symbols": ["pathlib.Path.read_text"],
+            "expected_urls": ["library/pathlib.html"],
+            "retrieved": [retrieved_chunk],
+            "hit_at_5": True,
+            "hit_at_10": True,
+            "rank_for_mrr": 1,
+            "model_output_text": "Use Path.read_text() [1].",
+            "cited_chunk_ids": ["symbol:pathlib.Path.read_text"],
+            "refused": False,
+            "generation_latency_seconds": 12.3,
+        }
+    ]
+    (run_dir / "per_query.jsonl").write_text(
+        "\n".join(_json.dumps(r) for r in per_query) + "\n", encoding="utf-8"
+    )
+
+    if with_judge_scores:
+        (run_dir / "judge_scores.jsonl").write_text("", encoding="utf-8")
+
+    return run_dir
+
+
+def _stub_judge_one(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Replace evaluation.judge.judge_one with a capturing stub.
+
+    Returns the captured-state dict so tests can inspect what the CLI
+    passed to judge_one (model_id, temperature, max_tokens, etc.).
+    """
+    from python_doc_assistant.evaluation.judge import JudgeRecord
+
+    captured: dict[str, Any] = {"calls": []}
+
+    def fake_judge_one(
+        query: str,
+        expected_symbols: Any,
+        retrieved_chunks: Any,
+        cited_chunk_ids: Any,
+        refused: bool,
+        model_output_text: str,
+        **kwargs: Any,
+    ) -> JudgeRecord:
+        # Mirror real judge_one: 6 positional + keyword-only client/model_id/etc.
+        captured["calls"].append({
+            "query": query,
+            "expected_symbols": expected_symbols,
+            "retrieved_chunks": retrieved_chunks,
+            "cited_chunk_ids": cited_chunk_ids,
+            "refused": refused,
+            "model_output_text": model_output_text,
+            **kwargs,
+        })
+        return JudgeRecord(
+            query=query,
+            tier="correct",
+            notes="stubbed",
+            raw_output='{"tier":"correct","reason":"stubbed"}',
+            judge_model=kwargs.get("model_id", "stub-model"),
+            judge_prompt_hash="abcd1234",
+            timestamp="2026-04-29T12:00:00+00:00",
+        )
+
+    monkeypatch.setattr("python_doc_assistant.evaluation.judge.judge_one", fake_judge_one)
+    # Also intercept anthropic.Anthropic() so no API call is attempted.
+    import sys
+    import types
+
+    fake_module = types.ModuleType("anthropic")
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            pass
+
+    fake_module.Anthropic = _FakeClient  # type: ignore[attr-defined]
+    fake_module.APIError = Exception  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "anthropic", fake_module)
+
+    return captured
+
+
+def test_cli_judge_writes_judge_scores_jsonl(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`pdr judge --run-dir X` writes judge_scores.jsonl + updates results.json."""
+    import json as _json
+
+    run_dir = _judge_run_dir(tmp_path)
+    captured = _stub_judge_one(monkeypatch)
+
+    # Point chunks.jsonl at an empty fixture so judge_one stub doesn't depend on it
+    chunks_path = tmp_path / "data" / "chunks" / "3.12" / "abcdef123456" / "chunks.jsonl"
+    chunks_path.parent.mkdir(parents=True)
+    chunks_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["judge", "--run-dir", str(run_dir)])
+    assert result.exit_code == 0, result.output
+
+    # judge_scores.jsonl created
+    judge_path = run_dir / "judge_scores.jsonl"
+    assert judge_path.exists()
+    records = [
+        _json.loads(line)
+        for line in judge_path.read_text().splitlines()
+        if line.strip()
+    ]
+    assert len(records) == 1
+    assert records[0]["query"] == "pathlib.Path.read_text"
+    assert records[0]["tier"] == "correct"
+
+    # results.json updated with judge + judge_aggregate keys
+    results = _json.loads((run_dir / "results.json").read_text())
+    assert "judge" in results
+    assert results["judge"]["judge_model"] == "claude-haiku-4-5-20251001"
+    assert "judge_aggregate" in results
+    assert results["judge_aggregate"]["n"] == 1
+
+    # judge_one received the per_query row's fields
+    assert len(captured["calls"]) == 1
+    call = captured["calls"][0]
+    assert call["query"] == "pathlib.Path.read_text"
+    assert call["model_id"] == "claude-haiku-4-5-20251001"
+    assert call["temperature"] == 0.0
+    assert call["max_tokens"] == 200
+
+
+def test_cli_judge_skips_existing_unless_rerun_existing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If judge_scores.jsonl already exists, skip silently — caller must opt in."""
+    run_dir = _judge_run_dir(tmp_path, with_judge_scores=True)
+    captured = _stub_judge_one(monkeypatch)
+    chunks_path = tmp_path / "data" / "chunks" / "3.12" / "abcdef123456" / "chunks.jsonl"
+    chunks_path.parent.mkdir(parents=True)
+    chunks_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+
+    runner = CliRunner()
+    # Without flag → skip
+    result = runner.invoke(main, ["judge", "--run-dir", str(run_dir)])
+    assert result.exit_code == 0, result.output
+    assert "SKIP" in result.output
+    assert len(captured["calls"]) == 0
+
+    # With flag → re-judge
+    result2 = runner.invoke(main, ["judge", "--run-dir", str(run_dir), "--rerun-existing"])
+    assert result2.exit_code == 0, result2.output
+    assert len(captured["calls"]) == 1
+
+
+def test_cli_judge_max_rows_caps_judge_calls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--max-rows 2 limits the per_query rows judged."""
+    import json as _json
+
+    run_dir = _judge_run_dir(tmp_path)
+    # Append more rows
+    pq_path = run_dir / "per_query.jsonl"
+    extra = []
+    for i in range(2, 6):
+        extra.append({
+            "query": f"q{i}",
+            "query_type": "identifier",
+            "match_policy": "any",
+            "url_match": "strip_anchor",
+            "expected_symbols": [],
+            "expected_urls": [],
+            "retrieved": [],
+            "hit_at_5": False,
+            "hit_at_10": False,
+            "rank_for_mrr": None,
+            "model_output_text": "x",
+            "cited_chunk_ids": [],
+            "refused": False,
+            "generation_latency_seconds": 1.0,
+        })
+    with pq_path.open("a", encoding="utf-8") as f:
+        for r in extra:
+            f.write(_json.dumps(r) + "\n")
+
+    captured = _stub_judge_one(monkeypatch)
+    chunks_path = tmp_path / "data" / "chunks" / "3.12" / "abcdef123456" / "chunks.jsonl"
+    chunks_path.parent.mkdir(parents=True)
+    chunks_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["judge", "--run-dir", str(run_dir), "--max-rows", "2"])
+    assert result.exit_code == 0, result.output
+    # judge_one called only twice despite 5 rows in per_query.jsonl
+    assert len(captured["calls"]) == 2
+
+
+def test_cli_judge_passes_decoding_overrides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """--judge-model / --temperature / --max-tokens reach judge_one."""
+    run_dir = _judge_run_dir(tmp_path)
+    captured = _stub_judge_one(monkeypatch)
+    chunks_path = tmp_path / "data" / "chunks" / "3.12" / "abcdef123456" / "chunks.jsonl"
+    chunks_path.parent.mkdir(parents=True)
+    chunks_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(f"{CLI_MODULE}.DEFAULT_DATA_ROOT", tmp_path / "data")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "judge", "--run-dir", str(run_dir),
+            "--judge-model", "claude-sonnet-4-5",
+            "--temperature", "0.2",
+            "--max-tokens", "300",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    call = captured["calls"][0]
+    assert call["model_id"] == "claude-sonnet-4-5"
+    assert call["temperature"] == 0.2
+    assert call["max_tokens"] == 300
+
+
+# ------------------------------------------------------------------
 # CLI: build-index --with-dense (v2 §5 prereq)
 # ------------------------------------------------------------------
 
