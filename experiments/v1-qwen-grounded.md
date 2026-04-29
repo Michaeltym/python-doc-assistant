@@ -1,6 +1,8 @@
 # v1 — Qwen2.5 Grounded Generation
 
-Living document. Filled in incrementally as §3 → §7 of `plans/v1-qwen-generator.md` complete.
+Closed v1 narrative. Documents the §1–§8 deliverables of
+`plans/v1-qwen-generator.md` and the baseline data points that feed
+v2 / v3.
 
 ## Status
 
@@ -15,17 +17,26 @@ Living document. Filled in incrementally as §3 → §7 of `plans/v1-qwen-genera
 | §7 | Refusal rate on out-of-scope eval set | ✅ done (this doc + 2 oos run snapshots) |
 | §8 | v2 priority recommendation | ✅ done (this doc, see §8 below) |
 
-## Reproducibility (current)
+## Reproducibility
 
-- **model_id:** `Qwen/Qwen2.5-1.5B-Instruct`
-- **decoding:** greedy — `temperature=0`, `top_p=1`, `max_new_tokens=512`, `do_sample=False`
-- **device:** auto-detect (`cuda > mps > cpu`); Mac smoke run used `mps`
-- **prompt format:** numeric `[N]` citations, HARD RULES, system/user role split, no few-shot
-- **chat template:** `tokenizer.apply_chat_template(..., tokenize=False, add_generation_prompt=True)` (Qwen2.5 default)
+| Field | Value |
+|---|---|
+| docs_version | `3.12` |
+| docs_served_version | `3.12.13` |
+| docs_sha_short | `a5c1a35a5a02` |
+| chunks count | 11,581 |
+| eval set (in-scope) | `eval_sets/v0_core.jsonl` (n=34) |
+| eval set (out-of-scope) | `eval_sets/v1_out_of_scope_20.jsonl` (n=20) |
+| model_id | `Qwen/Qwen2.5-1.5B-Instruct` (+ `Qwen/Qwen2.5-Coder-1.5B-Instruct` for §4) |
+| decoding | greedy — `temperature=0`, `top_p=1`, `max_new_tokens=512`, `do_sample=False` |
+| device | auto-detect (`cuda > mps > cpu`); Mac runs used `mps` |
+| prompt format | numeric `[N]` citations, HARD RULES, system/user role split, no few-shot |
+| chat template | `tokenizer.apply_chat_template(..., tokenize=False, add_generation_prompt=True)` (Qwen2.5 default) |
 
-Reproducibility fields below (`docs_version`, `docs_served_version`, `docs_sha_short`, `ingest_manifest`) will be filled once §6 runs against `eval_sets/v0_core.jsonl`. §3 smoke used hand-crafted `Chunk` objects, not the ingested corpus.
+§3 smoke used hand-crafted `Chunk` objects, not the ingested corpus —
+all later §4 / §6 / §7 numbers come from the docs sha above.
 
-## §3 Smoke findings (2 hand-crafted queries)
+## §3 — Smoke findings (2 hand-crafted queries)
 
 Goal: validate end-to-end wiring before running on the full eval set. Not a statistical sample — qualitative signal only.
 
@@ -52,7 +63,7 @@ Goal: validate end-to-end wiring before running on the full eval set. Not a stat
 2. **Refusal compliance 0% on empty CONTEXT** — §7 `refusal_rate` will be near zero. Model invents a citation index and answers.
 3. **Code example fidelity poor** — model mixes chunk content with prior knowledge, producing chains the docs do not support. Affects "wrong" vs "hallucination" §6 tier classification.
 
-## §3 Prompt iteration log
+## §3 — Prompt iteration log
 
 Four prompt configurations were smoke-tested before settling on the current state. Each tweak traded citation compliance against refusal compliance — none was strictly better than the previous, so the final pick is "least-worst on Test 1".
 
