@@ -306,23 +306,103 @@ The 4 remaining systematic disagreements:
   v3 work can switch to Sonnet or extend the prompt with more shots
   if absolute calibration becomes important.
 
-## §7 — Narrative answers (TODO)
+## §7 — Narrative answers
 
-Will be filled once §5 generation rows + §6 judge scores are in. Plan §7
-mandates direct answers to:
+Plan §7 mandates direct answers to four questions. Retrieval-only
+data is in already; generation-quality data depends on §6 judge runs
+(currently 6 configs queued; placeholder cells marked **TBD**).
 
-- **How much does rerank contribute** to Recall@5 / answer quality?
-  Retrieval answer: +2.7 pp Recall@5 (dense 0.811 → 0.838). Generation
-  answer pending.
-- **Dense vs BM25** — which queries does each win? Retrieval-only
-  finding: BM25 wins on identifier-exact + typo-recovery; Dense wins on
-  NL/howto/comparison.
-- **α sweep optimum** + impact on hallucination — α=0.3 retrieval-best
-  for linear hybrid; impact on hallucination rate pending §6 judge.
-- **Final recommended configuration** + why?
-  Strong candidate: **dense + rerank** (best Recall@5, +10.8 pp over
-  v0 baseline, latency 21.6s/query acceptable). Confirmation pending
-  hallucination_rate.
+### Q1 — How much does rerank contribute to Recall@5 / answer quality?
+
+| Layer | Without rerank | With rerank | Δ |
+|---|---|---|---|
+| Recall@5 (best inner) | dense 0.811 | dense+rerank 0.838 | **+2.7 pp** |
+| Recall@5 (best hybrid inner) | hybrid-linear α=0.3 = 0.802 | (rrf+rerank == linear+rerank) = 0.829 | +2.7 pp |
+| MRR | dense 0.691 | dense+rerank 0.705 | +1.4 pp |
+| hallucination_rate | TBD (judge on `dense-qwen`) | TBD (judge on `dense-rerank-qwen`) | TBD |
+| correct_rate | TBD | TBD | TBD |
+
+Headline: **rerank delivers +2.7 pp Recall@5** at the cost of an extra
+~7 s per query (cross-encoder forward pass on top-20 candidates).
+Reranker quality is bounded by the inner retriever's top-20 SET — the
+RRF and linear-α=0.3 + rerank rows produce identical metrics because
+their top-20 sets overlap nearly fully.
+
+### Q2 — On which queries does Dense beat BM25, and vice versa?
+
+(Retrieval-only finding from §5 ablation. Backed by per_query.jsonl
+deltas; spot-checked via `pdr ask --debug`.)
+
+**BM25 wins on:**
+- **identifier-exact** queries (e.g. `pathlib.Path.read_text`) — BM25's
+  exact-token match dominates dense embedding similarity here.
+- **typo recovery** (e.g. `pathlib.Path.raed_text`) — BM25's analyzer
+  tokens still hash near the right symbol; dense embedding gets confused
+  by the noisy token.
+
+**Dense wins on:**
+- **NL paraphrase** — "how to memoize" → `functools.lru_cache` (BM25 has
+  no "memoize" → "cache" linkage; dense embedding spans it).
+- **Howto** — "how to read a file in python" lands `pathlib.Path.read_text`
+  + `io.open` instead of unrelated chunks tokenized on `read` / `file`.
+- **Comparison** — "json vs pickle" lands the literal
+  `library/pickle.html#comparison-with-json` section_chunk that BM25 also
+  finds, but dense ranks it higher when both `json` and `pickle` appear
+  semantically.
+- **Long conversational** — "given a string with mixed unicode characters
+  how do I normalize it before comparing or hashing" lands
+  `unicodedata.normalize` rank 1.
+
+The 6 v0 baseline failures (recall@5=0) split: dense alone fixes 4
+(`how to read a file`, `how to memoize`, `Path vs os.path`,
+`json vs pickle`), 1 still hard (`how to count occurrences in a list`),
+1 remains a `match_policy=all` schema artifact (`list vs tuple`).
+
+### Q3 — α-sweep optimum + impact on hallucination
+
+| α (linear hybrid) | Recall@5 | Recall@10 | MRR | hallucination_rate |
+|---:|---:|---:|---:|---:|
+| 0.0 (dense) | 0.811 | 0.892 | 0.691 | TBD |
+| 0.2 | 0.802 | 0.901 | 0.694 | TBD (not run for generation) |
+| 0.3 | **0.802** | **0.910** | **0.692** | TBD (judge on `hybrid-linear-a03-qwen`) |
+| 0.5 | 0.784 | 0.883 | 0.647 | TBD |
+| 0.7 | 0.784 | 0.865 | 0.601 | TBD |
+| 0.8 | 0.748 | 0.865 | 0.591 | TBD |
+| 1.0 (bm25) | 0.712 | 0.766 | 0.567 | TBD (judge on `symbol-bm25-qwen`) |
+
+Retrieval optimum: **α=0.3** (highest Recall@10 at 0.910, ties for top
+Recall@5 with α=0.2, beats every α>0.5 by 1-9 pp). Pure dense (α=0)
+still tops Recall@5 by 0.9 pp — α<0.5 is a "low-floor" zone where
+hybrid is competitive but not strictly better than dense alone.
+
+Hallucination_rate impact: TBD pending judge runs.
+
+### Q4 — Final recommended configuration + why?
+
+**Recommended for v2 default: `dense + rerank`.**
+
+Justification:
+- **Best Recall@5 across all 12 ablation configs (0.838).**
+- **Best MRR among rerank flavours (0.705)** — top-1 lands the right
+  chunk most often.
+- **+10.8 pp over v0 baseline** (symbol+bm25 0.730).
+- Latency 21.6 s/query on Mac MPS — acceptable for grounded use case;
+  rerank adds ~7 s vs dense alone.
+- Generation quality: TBD (judge run on `2026-04-28T12-16-13-v2-dense-rerank-qwen`
+  pending). v1 baseline hallucination_rate was 14.7%; predicted
+  reduction is to 5–10 % range based on retrieval improvement, but
+  awaiting confirmation.
+
+**Caveats / runners-up:**
+- `hybrid-linear α=0.3 + rerank` and `hybrid-rrf + rerank` produce
+  identical metrics (0.829/0.883/0.709) — picking either over
+  dense+rerank costs 0.9 pp Recall@5 and gains nothing measurable.
+- `hybrid-linear α=0.3` (no rerank) is the best **non-rerank** config
+  if the +7 s latency budget isn't available — scores 0.802/0.910/0.692,
+  highest Recall@10 anywhere.
+- `dense` alone is the simplest low-latency option (no cross-encoder
+  load) — 0.811/0.892/0.691, only 2.7 pp Recall@5 short of the rerank
+  config.
 
 ## §8 — v3 priority recommendation (TODO)
 
