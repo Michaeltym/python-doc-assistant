@@ -99,7 +99,7 @@ grounded answer + citations
 | Inference backend | `transformers` → `llama.cpp` (as needed) | Get it working first, then swap                                |
 | Evaluation  | Hand-written scripts + optional RAGAS | Hand-written first                                                  |
 
-## 7. Four-Stage Roadmap
+## 7. Five-Stage Roadmap
 
 > Each stage's detailed task breakdown, acceptance criteria, and decision points are in [`plans/`](plans/):
 >
@@ -107,6 +107,7 @@ grounded answer + citations
 > - [`plans/v1-qwen-generator.md`](plans/v1-qwen-generator.md)
 > - [`plans/v2-ablation.md`](plans/v2-ablation.md)
 > - [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md)
+> - [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md)
 
 ### v0 — Retrieval-only + eval set bootstrap (about 1 week)
 
@@ -193,6 +194,23 @@ Completion criteria: ablation data can directly answer "how much did rerank cont
 Positioning: a standalone learning objective; not chasing quality.
 
 Completion criteria: all MVP deliverables wired up end-to-end; **generation quality is not a pass criterion**; stretch goals count for whatever gets done. Details in [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md).
+
+### v4 — Production-track accuracy (4–6 weeks)
+
+Building on the v2 §9 cross-generator follow-up, which established that the local Qwen 1.5B is the dominant constraint on hallucination at the v2 retrieval ceiling, v4 lifts answer accuracy on Python documentation queries from `0.685` (Qwen 1.5B baseline) / `0.757` (capacity-class generator on the same retrieval) to `≥ 0.90` with `hallucination_rate ≤ 0.03` on a scaled eval set of `n ≥ 300`.
+
+Deliverables (sub-task ordering driven by v2 §9 refusal triage):
+
+- **Refusal calibration** — soften the `[INSUFFICIENT-CONTEXT]` trigger and add in-prompt calibration examples; targets the 8/21 false-refuse rows on retrieval-hit queries observed in v2 §9
+- **Retrieval-miss recovery** — query rewrite (HyDE) for natural-language queries, comparison decomposition for `match_policy=all` rows, chunker re-cut to favor finer section/symbol boundaries
+- **Generator backend integration** — `claude_backend.py` exposing the Anthropic Messages API as a `Generator` implementation; `--backend {qwen, claude}` CLI flag
+- **Self-verification loop** — verify-and-revise pass after the initial generation
+- **Eval set expansion** — `eval_sets/v4_prod.jsonl` with `n ≥ 300` in-scope plus 30 out-of-scope queries
+- **Diagnostic metrics** — per-query-type accuracy / hallucination breakdown in `results.json`; refusal precision / recall / F1; failure-mode triage tooling
+- **Interactive `pdr ask` subcommand** with streaming, citation rendering, pre-flight checks
+- **Optional**: agentic / tool-use generator (only if accuracy after the above is < 0.88); HTTP API + web UI; MCP server
+
+Completion criteria: `accuracy ≥ 0.90` on `eval_sets/v4_prod.jsonl`, `hallucination_rate ≤ 0.03`, `latency_p50 ≤ 3 s`, 95% CIs reported on every aggregate accuracy claim. Details in [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md).
 
 ## 8. Evaluation Strategy (Spans All Stages)
 

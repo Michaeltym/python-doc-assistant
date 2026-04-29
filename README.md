@@ -6,47 +6,51 @@ and a kappa-calibrated LLM-as-judge for answer-quality evaluation. Every
 eval run is replayable bit-for-bit against the same corpus.
 
 **v0** retrieval baseline → **v1** grounded `Qwen2.5-1.5B-Instruct`
-generation → **v2** dense / hybrid / rerank ablation + LLM-as-judge.
-All three stages complete with narrative, run snapshots, and a 663-row
-judge dataset.
+generation → **v2** dense / hybrid / rerank ablation + LLM-as-judge +
+cross-generator follow-up. All three stages complete with narrative,
+run snapshots, and a 774-row judge dataset.
 
 ## Headline results
 
-`eval_sets/v2_full.jsonl`, n=111 queries; generator =
-`Qwen/Qwen2.5-1.5B-Instruct`; judge = `claude-haiku-4-5-20251001`,
-prompt hash `65fa23b9`.
+`eval_sets/v2_full.jsonl`, n=111 queries; judge =
+`claude-haiku-4-5-20251001`, prompt hash `65fa23b9`.
 
 | Configuration | Recall@5 | accuracy | halluc | correct |
 |---|---:|---:|---:|---:|
-| `symbol+bm25` (v0 baseline)   | 0.730 | 61.3% | 25.2% | 18.9% |
-| `dense`                       | 0.811 | 67.9% | **21.1%** | 11.0% |
-| `hybrid-rrf`                  | 0.775 | 67.6% | 21.6% | 16.2% |
-| `hybrid-linear α=0.3`         | 0.802 | **69.1%** | 22.7% | 12.7% |
-| `hybrid-rrf + rerank`         | 0.829 | 66.7% | 21.6% | 8.1% |
-| `dense + rerank`              | **0.838** | 68.5% | 21.6% | 6.3% |
+| `symbol+bm25` × Qwen 1.5B (v0 baseline) | 0.730 | 61.3% | 25.2% | 18.9% |
+| `dense` × Qwen 1.5B                     | 0.811 | 67.9% | 21.1% | 11.0% |
+| `hybrid-rrf` × Qwen 1.5B                | 0.775 | 67.6% | 21.6% | 16.2% |
+| `hybrid-linear α=0.3` × Qwen 1.5B       | 0.802 | 69.1% | 22.7% | 12.7% |
+| `hybrid-rrf + rerank` × Qwen 1.5B       | 0.829 | 66.7% | 21.6% | 8.1% |
+| `dense + rerank` × Qwen 1.5B            | **0.838** | 68.5% | 21.6% | 6.3% |
+| **`dense + rerank` × GPT-5.5** (v2 §9 follow-up) | 0.829 | **75.7%** | **2.7%** | **37.0%** |
 
 `accuracy = (correct + partial) / n`. **Bold** = best in column.
 
-## Three findings worth noting
+## Four findings worth noting
 
-1. **Retrieval and generation winners diverge.** Best Recall@5 is
-   `dense+rerank` (0.838); best accuracy is `hybrid-linear α=0.3`
-   (69.1%); best correct_rate is `symbol+bm25` (18.9% — the v0
-   baseline). The retrieval winner is not the answer-quality winner.
-2. **Hallucination clusters at 21-23% across all 5 dense / hybrid
-   configs.** Switching retrieval algorithm barely moves
-   hallucination on a 1.5B Qwen — a strong signal that the
-   generation-side ceiling, not retrieval, is the next bottleneck.
-3. **Rerank delivers +2.7 pp Recall@5 but 0 pp accuracy.** Cross-encoder
-   reordering elevates broader section_chunks; the 1.5B model then
-   prefers them over precise symbol_chunks. correct_rate even *drops*
-   −4.7 pp on `dense → dense+rerank`. The retrieval benchmark wins
-   are real; they just don't translate into answer-quality wins at
-   this generator size.
+1. **Retrieval and generation winners diverge across the Qwen rows.**
+   Best Recall@5 is `dense+rerank` (0.838); best accuracy is
+   `hybrid-linear α=0.3` (69.1%); best correct_rate is `symbol+bm25`
+   (18.9% — the v0 baseline).
+2. **Hallucination clusters at 21-23% across all five dense / hybrid
+   configs on Qwen 1.5B.** Switching retrieval algorithm barely moves
+   hallucination — a strong signal that the generation-side ceiling,
+   not retrieval, is the next bottleneck on a small generator.
+3. **Rerank delivers +2.7 pp Recall@5 but 0 pp accuracy on Qwen 1.5B.**
+   Cross-encoder reordering elevates broader `section_chunk`s; the
+   1.5B model then prefers them over precise `symbol_chunk`s.
+   `correct_rate` even *drops* −4.7 pp on `dense → dense+rerank`.
+4. **Switching the generator collapses the hallucination plateau.**
+   On the same `dense+rerank` retrieval, replacing Qwen 1.5B with
+   GPT-5.5 drops `hallucination_rate` from 21.6% to 2.7% (≈8×) and
+   raises `correct_rate` from 6.3% to 37.0% (≈6×). The
+   generation-side ceiling identified in finding 2 is not theoretical
+   — it is the dominant constraint at the v2 retrieval ceiling.
 
-Full ablation table, narrative, and v3 priority recommendation:
-[`experiments/v2-ablation.md`](experiments/v2-ablation.md). Per-stage
-narratives:
+Full ablation tables, cross-generator follow-up, and v4 priority
+hand-off: [`experiments/v2-ablation.md`](experiments/v2-ablation.md).
+Per-stage narratives:
 [`experiments/v0-bm25-only.md`](experiments/v0-bm25-only.md),
 [`experiments/v1-qwen-grounded.md`](experiments/v1-qwen-grounded.md).
 
@@ -200,8 +204,9 @@ against the exact corpus they were measured against.
 | ----- | ----------- | ---- | ------ |
 | **v0** | Retrieval + evaluation: ingest, chunker, BM25 + symbol index, router, CLI, eval set, metrics, run writer | [`plans/v0-retrieval-eval.md`](plans/v0-retrieval-eval.md) | ✅ Recall@5 = 0.730 on `symbol+bm25` (n=111) |
 | **v1** | `Qwen2.5-1.5B-Instruct` as a grounded generator with citations + refusal; out-of-scope eval set | [`plans/v1-qwen-generator.md`](plans/v1-qwen-generator.md) | ✅ Grounded prompt + 4-tier scoring shipped |
-| **v2** | Ablation: dense embeddings + hybrid (RRF / linear) + cross-encoder rerank, eval set scaled to 111 queries, LLM-as-judge with kappa-calibrated rubric | [`plans/v2-ablation.md`](plans/v2-ablation.md) | ✅ Recall@5 = 0.838 on `dense+rerank`; accuracy 61-69% across 6 generation configs; halluc 21-25% |
+| **v2** | Ablation: dense embeddings + hybrid (RRF / linear) + cross-encoder rerank, eval set scaled to 111 queries, LLM-as-judge with kappa-calibrated rubric, cross-generator follow-up | [`plans/v2-ablation.md`](plans/v2-ablation.md) | ✅ Recall@5 = 0.838 on `dense+rerank`; accuracy 61-69% on Qwen 1.5B configs, 75.7% on GPT-5.5; halluc 2.7-25.2% |
 | **v3** | (Research side track) Hand-written decoder-only LLM (RoPE / RMSNorm / SwiGLU / KV cache) plugged into the same RAG pipeline as a comparison backend | [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md) | Research; no accuracy claim — learning value only |
+| **v4** | Production-track accuracy lift: refusal calibration, retrieval miss recovery, Claude API generator backend, self-verification, eval expansion to n ≥ 300, optional HTTP API + MCP server | [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md) | Planned — target `accuracy ≥ 0.90`, `hallucination_rate ≤ 0.03` |
 
 Top-level project plan: [`PLAN.md`](PLAN.md). Per-stage plans are the
 authoritative source for sub-task ordering, acceptance criteria, and
@@ -346,17 +351,18 @@ measured against.
 
 ## What's next
 
+- **v4 (production-track accuracy)**: lift accuracy from 0.757 (best v2
+  configuration with a capacity-class generator) to `≥ 0.90` with
+  `hallucination_rate ≤ 0.03` on a 300-query eval set. Sub-tasks
+  cover refusal calibration, retrieval-miss recovery (query rewrite
+  + comparison decomposition + chunker re-cut), Claude API generator
+  backend, a self-verification loop, expanded diagnostic metrics, an
+  interactive `pdr ask` subcommand, and optional HTTP API + MCP
+  server endpoints. Plan: [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md).
 - **v3 (research side track)**: hand-written decoder-only tiny LLM
   (RoPE / RMSNorm / SwiGLU / KV cache) as a Generator backend
   alongside Qwen — purely for learning the architecture end-to-end,
   no accuracy goal. Plan: [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md).
-- **Production-track (separate plan, not yet committed)**: swap the
-  generator from local Qwen 1.5B to a 7B+ open model or an API-grade
-  Claude / GPT model; add a chunker re-cut to favor symbol-level
-  citations; layer per-query-type retrieval routing (BM25 for
-  identifier-exact, dense for NL/howto). Goal: lift accuracy from
-  ~68% to ≥ 90% on a scaled 300-query eval set. Driven by §8 P0/P1/P2
-  in [`experiments/v2-ablation.md`](experiments/v2-ablation.md).
 
 ---
 
