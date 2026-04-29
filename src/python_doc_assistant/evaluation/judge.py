@@ -58,16 +58,34 @@ DEFAULT_MAX_TOKENS: Final[int] = 200  # tier + 1-sentence reason
 JUDGE_PROMPT_TEMPLATE: Final[str] = """\
 You are scoring a Python-stdlib documentation assistant's answer.
 
-TIER DEFINITIONS:
-- correct       — facts correct AND citation matches expected_symbols
-- partial       — answer substantively correct but missing details OR
-                  has wrong/missing/module-level citation when a method-
-                  level one was expected
-- wrong         — factually wrong (regardless of citation)
-- hallucination — uses content NOT present in the retrieved chunks
-                  (most severe; reserve for invented/unsupported claims)
-- refused       — model output was [INSUFFICIENT-CONTEXT] alone
-                  (or refused == true with empty text)
+TIER DEFINITIONS — apply in priority order:
+
+1. refused: model_output is empty (refused=true). Stop here.
+
+2. Did the answer correctly address the user's question? Use your own
+   knowledge of the Python 3.12 standard library to judge factual
+   correctness; do NOT require everything to be present in the retrieved
+   chunks for this step.
+   - YES → go to step 3.
+   - NO  → go to step 4.
+
+3. Citation analysis (answer was factually correct):
+   - a cited chunk_id exact-matches expected_symbols → correct
+   - any other case (no cite, wrong cite, module-level cite when a
+     method-level was expected, or right cite mixed with extras) →
+     partial
+
+4. Grounding analysis (answer was factually wrong):
+   - prose's claims appear in some retrieved chunk (model used a
+     wrong-API chunk that was retrieved, or reversed the chunk's
+     conclusion) → wrong
+   - prose's claims are NOT supported by any retrieved chunk (model
+     fabricated from prior knowledge / invented content) → hallucination
+
+KEY: when the prose is correct, grounding does NOT matter — partial vs
+correct is decided by citation alone. When the prose is wrong, grounding
+distinguishes wrong (model relied on a wrong retrieved chunk) from
+hallucination (model invented content from outside retrieval).
 
 INPUTS:
 - query                  : {query}
@@ -311,7 +329,10 @@ def stratified_sample(
         scores_by_tier[s.tier].append(s)
     queries: list[str] = []
     rng = random.Random(seed)
-    for t in VALID_TIERS:
+    # sorted() — VALID_TIERS is a frozenset; iteration order under hash
+    # randomization differs across processes. sort to make `seed`
+    # deterministic across runs.
+    for t in sorted(VALID_TIERS):
         scores = scores_by_tier.get(t, [])
         queries_per_tier = [s.query for s in scores]
         if len(scores) <= total_queries_per_tier:
