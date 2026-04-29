@@ -20,6 +20,7 @@ retrieval = ["rank-bm25", "numpy", "rapidfuzz"]
 generation = ["transformers", "torch", "accelerate"]
 embedding = ["sentence-transformers", "numpy"]
 rerank = ["sentence-transformers"]
+judge = ["anthropic"]
 
 [project.scripts]
 python-doc-assistant = "python_doc_assistant.cli:main"
@@ -50,6 +51,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "sentence_transformers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "anthropic.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]                                                                                    
