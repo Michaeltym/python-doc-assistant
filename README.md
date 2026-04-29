@@ -1,27 +1,79 @@
 # python-doc-assistant
 
-A Python documentation RAG assistant built from scratch, with reproducible
-ingest → chunk → index → retrieve → evaluate pipeline. Pinned to a specific
-docs version + sha so every eval run is replayable.
+A Python documentation RAG assistant built from scratch — pinned corpus,
+12-configuration retrieval ablation, grounded generation with citations,
+and a kappa-calibrated LLM-as-judge for answer-quality evaluation. Every
+eval run is replayable bit-for-bit against the same corpus.
 
-**Status:** v0 (retrieval + eval) and v1 (Qwen generator + grounded prompt) complete. v2 (dense / hybrid / rerank ablation + LLM-as-judge) — retrieval ablation + judge module complete; generation eval (6 configs × n=111 with Haiku 4.5 judge) running.
+**v0** retrieval baseline → **v1** grounded `Qwen2.5-1.5B-Instruct`
+generation → **v2** dense / hybrid / rerank ablation + LLM-as-judge.
+All three stages complete with narrative, run snapshots, and a 663-row
+judge dataset.
 
-Best retrieval configuration (v2, on `eval_sets/v2_full.jsonl`, n=111):
+## Headline results
 
-| Configuration | Recall@5 | Recall@10 | MRR |
-| ------------- | -------: | --------: | --: |
-| v0 BM25 baseline (`bm25`)   | 0.712 | 0.766 | 0.567 |
-| v0 router (`symbol+bm25`)   | 0.730 | 0.775 | 0.625 |
-| v2 best (`dense + rerank`)  | **0.838** | 0.883 | 0.705 |
+`eval_sets/v2_full.jsonl`, n=111 queries; generator =
+`Qwen/Qwen2.5-1.5B-Instruct`; judge = `claude-haiku-4-5-20251001`,
+prompt hash `65fa23b9`.
 
-Generation eval (`Qwen2.5-1.5B-Instruct` + LLM-as-judge with Haiku 4.5)
-on the same six retrieval configs is the v2 §6 deliverable; numbers are
-filled in [`experiments/v2-ablation.md`](experiments/v2-ablation.md) as
-each judge run completes.
+| Configuration | Recall@5 | accuracy | halluc | correct |
+|---|---:|---:|---:|---:|
+| `symbol+bm25` (v0 baseline)   | 0.730 | 61.3% | 25.2% | 18.9% |
+| `dense`                       | 0.811 | 67.9% | **21.1%** | 11.0% |
+| `hybrid-rrf`                  | 0.775 | 67.6% | 21.6% | 16.2% |
+| `hybrid-linear α=0.3`         | 0.802 | **69.1%** | 22.7% | 12.7% |
+| `hybrid-rrf + rerank`         | 0.829 | 66.7% | 21.6% | 8.1% |
+| `dense + rerank`              | **0.838** | 68.5% | 21.6% | 6.3% |
 
-Run details: [`experiments/v0-bm25-only.md`](experiments/v0-bm25-only.md),
-[`experiments/v1-qwen-grounded.md`](experiments/v1-qwen-grounded.md),
-[`experiments/v2-ablation.md`](experiments/v2-ablation.md).
+`accuracy = (correct + partial) / n`. **Bold** = best in column.
+
+## Three findings worth noting
+
+1. **Retrieval and generation winners diverge.** Best Recall@5 is
+   `dense+rerank` (0.838); best accuracy is `hybrid-linear α=0.3`
+   (69.1%); best correct_rate is `symbol+bm25` (18.9% — the v0
+   baseline). The retrieval winner is not the answer-quality winner.
+2. **Hallucination clusters at 21-23% across all 5 dense / hybrid
+   configs.** Switching retrieval algorithm barely moves
+   hallucination on a 1.5B Qwen — a strong signal that the
+   generation-side ceiling, not retrieval, is the next bottleneck.
+3. **Rerank delivers +2.7 pp Recall@5 but 0 pp accuracy.** Cross-encoder
+   reordering elevates broader section_chunks; the 1.5B model then
+   prefers them over precise symbol_chunks. correct_rate even *drops*
+   −4.7 pp on `dense → dense+rerank`. The retrieval benchmark wins
+   are real; they just don't translate into answer-quality wins at
+   this generator size.
+
+Full ablation table, narrative, and v3 priority recommendation:
+[`experiments/v2-ablation.md`](experiments/v2-ablation.md). Per-stage
+narratives:
+[`experiments/v0-bm25-only.md`](experiments/v0-bm25-only.md),
+[`experiments/v1-qwen-grounded.md`](experiments/v1-qwen-grounded.md).
+
+---
+
+## Why these decisions
+
+**Pin the corpus by sha.** The Python docs archive is downloaded once
+under `data/docs/<version>/<sha_short>/` and `pdr ingest` errors out on
+any sha mismatch. Every `results.json` snapshots the full ingest
+manifest. An eval run from week 1 always replays against the exact
+same chunks, embeddings, and BM25 index it was measured against — no
+silent corpus drift, no "the docs site updated" excuses.
+
+**Build an ablation matrix, not a single config.** v2 runs 12 retrieval
+configurations on the same 111-query eval set: BM25 / symbol+BM25 /
+dense / hybrid-RRF / hybrid-linear at 5 α values / *+rerank pairs.
+That's how the surprising findings above surface. A "best config"
+single-shot would never reveal that rerank fails to help generation.
+
+**LLM-as-judge with kappa-calibrated agreement, not vibes.** v2 §6
+inter-rater agreement check on 15 stratified samples vs. manual scores
+yields exact-match 73.3% / Cohen's kappa 0.645 (substantial agreement,
+not the 80% rule-of-thumb plan bar but defensible for delta analysis).
+Methodology + four-tier rubric documented; deltas across configs use
+the same systematically-biased judge so cross-config comparisons stay
+valid even if absolute numbers shift.
 
 ---
 
@@ -74,63 +126,48 @@ uv run pdr judge --run-dir experiments/runs/<timestamp>-v2-dense-rerank-qwen
 
 ## Architecture
 
-```
-                       ┌──────────────────────┐
-   user query ────────▶│  Query router        │
-                       │  (identifier vs NL)  │
-                       └─────────┬────────────┘
-                                 │
-                ┌────────────────┴────────────────┐
-                │                                 │
-                ▼                                 ▼
-     ┌────────────────────┐           ┌──────────────────────┐
-     │  SymbolIndex       │           │  BM25Index           │
-     │  exact + fuzzy     │  miss     │  (rank_bm25)         │
-     │  multi-candidate   │ ────────▶ │  analyzer:           │
-     │                    │  fallback │   . / Camel / _ /    │
-     │                    │           │   lowercase last     │
-     └─────────┬──────────┘           └──────────┬───────────┘
-               │                                 │
-               └────────────┬────────────────────┘
-                            ▼
-                   ┌────────────────┐
-                   │  Top-K chunks  │
-                   └────────┬───────┘
-                            │
-              ┌─────────────┴─────────────┐
-              ▼                           ▼
-    ┌──────────────────┐        ┌──────────────────┐
-    │  CLI search:     │        │  CLI eval:       │
-    │  print chunk_ids │        │  evaluate() →    │
-    │  + debug info    │        │  results.json +  │
-    │                  │        │  per_query.jsonl │
-    └──────────────────┘        └──────────────────┘
+### Build-time pipeline (`pdr ingest` + `pdr build-index`)
 
-
-             Build-time pipeline (pdr ingest + pdr build-index)
-
-   docs.python.org
-   archive.tar.bz2
-        │
-        ▼
-   ┌────────────────┐    ┌────────────────────┐    ┌──────────────────┐
-   │  fetch_docs    │───▶│  parse_objects_inv │───▶│  build_chunks    │
-   │  + sha-keyed   │    │  (sphobjinv)       │    │  symbol+section  │
-   │  cache         │    │  → SymbolEntry[]   │    │  → Chunk[]       │
-   └────────────────┘    └────────────────────┘    └─────────┬────────┘
-                                                              │
-                            ┌─────────────────────────────────┤
-                            ▼                                 ▼
-                   ┌──────────────────┐             ┌──────────────────┐
-                   │  chunks.jsonl    │             │  bm25.pkl        │
-                   │  (per-chunk      │             │  (BM25Okapi      │
-                   │   metadata)      │             │   pickled)       │
-                   └──────────────────┘             └──────────────────┘
+```mermaid
+flowchart LR
+  A[docs.python.org<br/>archive.tar.bz2] -->|fetch_docs<br/>sha-keyed cache| B[data/docs/&lt;ver&gt;/&lt;sha&gt;/]
+  B -->|parse_objects_inv<br/>sphobjinv| C[SymbolEntry list]
+  B --> D[chunker<br/>symbol_chunk + section_chunk]
+  C --> D
+  D --> E[chunks.jsonl]
+  E --> F[BM25Index<br/>analyzer + BM25Okapi]
+  E --> G[DenseIndex<br/>bge-small-en-v1.5<br/>L2-normalized]
+  F --> H[bm25.pkl]
+  G --> I[dense.npy + dense.json]
 ```
 
-Every artifact (docs / chunks / indexes) is keyed by docs major.minor +
-archive sha256 short, so old eval runs always replay against the corpus
-they were measured on.
+### Query-time pipeline (`pdr search`, `pdr eval`, `pdr judge`)
+
+```mermaid
+flowchart TB
+  Q[user query] --> R{query type}
+  R -->|identifier-like| SX[SymbolIndex<br/>exact + fuzzy]
+  R -->|natural language| FAC[Retrieval factory]
+  SX -->|miss| FAC
+  FAC --> BM[BM25Index]
+  FAC --> DN[DenseIndex]
+  BM --> HY[Hybrid merge<br/>RRF or linear &alpha;]
+  DN --> HY
+  HY --> RR[CrossEncoder rerank<br/>bge-reranker-base<br/>top-20 → top-5]
+  RR --> TK[Top-K chunks]
+  HY --> TK
+  TK --> SR[pdr search<br/>print chunk_ids]
+  TK --> EV[pdr eval<br/>retrieval metrics]
+  TK --> GN[QwenGenerator<br/>grounded prompt + citations]
+  GN --> EV
+  EV --> RJ[results.json<br/>+ per_query.jsonl]
+  RJ --> JD[pdr judge<br/>Anthropic Haiku 4.5]
+  JD --> JR[judge_scores.jsonl<br/>+ judge_aggregate]
+```
+
+Every artifact (docs / chunks / indexes / eval runs) is keyed by docs
+`major.minor` + archive `sha256` short, so old eval runs always replay
+against the exact corpus they were measured against.
 
 ---
 
@@ -161,10 +198,10 @@ they were measured on.
 
 | Stage | Deliverable | Plan | Status |
 | ----- | ----------- | ---- | ------ |
-| **v0** | Retrieval + evaluation: ingest, chunker, BM25 + symbol index, router, CLI, eval set, metrics, run writer | [`plans/v0-retrieval-eval.md`](plans/v0-retrieval-eval.md) | ✅ Complete |
-| **v1** | `Qwen2.5-1.5B-Instruct` as a grounded generator with citations + refusal; out-of-scope eval set | [`plans/v1-qwen-generator.md`](plans/v1-qwen-generator.md) | ✅ Complete |
-| **v2** | Ablation: dense embeddings + hybrid (RRF / linear) + cross-encoder rerank, eval set scaled to 111 queries, LLM-as-judge with kappa-calibrated rubric | [`plans/v2-ablation.md`](plans/v2-ablation.md) | ✅ Retrieval + judge module complete; generation eval in progress |
-| **v3** | (Side track, learning) Hand-written decoder-only LLM (RoPE / RMSNorm / SwiGLU / KV cache) plugged into the same RAG pipeline as a comparison backend | [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md) | Research side track |
+| **v0** | Retrieval + evaluation: ingest, chunker, BM25 + symbol index, router, CLI, eval set, metrics, run writer | [`plans/v0-retrieval-eval.md`](plans/v0-retrieval-eval.md) | ✅ Recall@5 = 0.730 on `symbol+bm25` (n=111) |
+| **v1** | `Qwen2.5-1.5B-Instruct` as a grounded generator with citations + refusal; out-of-scope eval set | [`plans/v1-qwen-generator.md`](plans/v1-qwen-generator.md) | ✅ Grounded prompt + 4-tier scoring shipped |
+| **v2** | Ablation: dense embeddings + hybrid (RRF / linear) + cross-encoder rerank, eval set scaled to 111 queries, LLM-as-judge with kappa-calibrated rubric | [`plans/v2-ablation.md`](plans/v2-ablation.md) | ✅ Recall@5 = 0.838 on `dense+rerank`; accuracy 61-69% across 6 generation configs; halluc 21-25% |
+| **v3** | (Research side track) Hand-written decoder-only LLM (RoPE / RMSNorm / SwiGLU / KV cache) plugged into the same RAG pipeline as a comparison backend | [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md) | Research; no accuracy claim — learning value only |
 
 Top-level project plan: [`PLAN.md`](PLAN.md). Per-stage plans are the
 authoritative source for sub-task ordering, acceptance criteria, and
@@ -280,6 +317,46 @@ measured against.
 - **Reproducible per-run.** Docs version pinned via `DOCS_VERSION`;
   archive sha-keyed; manifest snapshotted into every eval result. No
   silent corpus drift between runs.
+
+---
+
+## What this project taught me
+
+- **Reproducibility costs almost nothing if it's designed in from
+  step 0** (sha-keyed corpus + manifest snapshot per run) and pays
+  back constantly once you start iterating. Every "wait, what config
+  was that under?" question becomes a `cat results.json` lookup.
+- **Ablation matrices reveal lies that single-best-config doesn't.**
+  The rerank-helps-Recall-but-not-accuracy finding is invisible
+  unless you measure both layers across multiple configs on the same
+  eval set.
+- **LLM-as-judge has real bias, but consistent bias across configs is
+  fine for delta analysis.** Cohen's kappa 0.645 is below the 0.80
+  rule-of-thumb but the cross-config comparisons stay valid because
+  the bias direction is the same everywhere.
+- **The generator dominates the ceiling.** A 1.5B Instruct model has
+  a ~21% hallucination floor on Python doc queries no matter how
+  good the retrieval is — meaning further retrieval optimization is
+  a low-leverage move at this generator size, and the next high-ROI
+  step is upgrading to a larger / API-grade model.
+- **Type hints + small, testable modules > frameworks.** 250+ tests
+  cover the codebase end-to-end with no real network and no real
+  models loaded. Adding dense indexing or reranking touched < 5
+  files each because the seams were already in place.
+
+## What's next
+
+- **v3 (research side track)**: hand-written decoder-only tiny LLM
+  (RoPE / RMSNorm / SwiGLU / KV cache) as a Generator backend
+  alongside Qwen — purely for learning the architecture end-to-end,
+  no accuracy goal. Plan: [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md).
+- **Production-track (separate plan, not yet committed)**: swap the
+  generator from local Qwen 1.5B to a 7B+ open model or an API-grade
+  Claude / GPT model; add a chunker re-cut to favor symbol-level
+  citations; layer per-query-type retrieval routing (BM25 for
+  identifier-exact, dense for NL/howto). Goal: lift accuracy from
+  ~68% to ≥ 90% on a scaled 300-query eval set. Driven by §8 P0/P1/P2
+  in [`experiments/v2-ablation.md`](experiments/v2-ablation.md).
 
 ---
 
