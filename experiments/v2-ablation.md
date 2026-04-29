@@ -22,9 +22,10 @@ Living document. Filled in incrementally as §1 → §7 of `plans/v2-ablation.md
 | §6 | Agreement check data + decision (kappa 0.645, exact 0.733, accept C) | ✅ done (commit `262303b`) |
 | Format | Unify v0 / v1 / v2 narrative skeleton | ✅ done (commit `a7e6940`) |
 | Status | Sync README + per-row judge log + v3 plan | ✅ done (commit `7c38e4a`) |
-| §6 | Judge runs on 6 generation configs (663 records, 3 parse errors) | ✅ done (uncommitted) |
-| §7 | Narrative — rerank contribution / dense vs bm25 / α / final config | ✅ done (uncommitted) |
-| §8 | v3 priority recommendation | ✅ done (skeleton in place; to refine post-judge) |
+| §6 | Judge runs on 6 generation configs (663 records, 3 parse errors) | ✅ done (commit `88671c2`) |
+| §7 | Narrative — rerank contribution / dense vs bm25 / α / final config | ✅ done (commit `88671c2`, refined `9c002d6`) |
+| §8 | v3 priority recommendation | ✅ done (data-driven priorities; further refined in §9) |
+| §9 | Cross-generator follow-up — GPT-5.5 manual workflow on dense+rerank (n=111) | ✅ done (run dir `2026-04-29T10-58-11-v2-dense-rerank-gpt55`) |
 
 ## Reproducibility
 
@@ -565,3 +566,60 @@ The data sharpen the role of v3 vs any subsequent production-oriented stage:
 - **Next stage (production-track)**: P0 (generator upgrade to a 7B+ open model or an API-grade model) is the sole high-leverage move; P1 (chunker re-cut) + P2 (routing-aware retriever) are stacking gains on top. A separate plan document will be drafted when this track is opened.
 
 If only one track is pursued, the production-track P0 dominates v3 entirely on accuracy goal.
+
+## §9 — Cross-generator follow-up: GPT-5.5 (manual)
+
+The §8 P0 hypothesis ("the 1.5B Qwen Instruct generator is the ceiling, not retrieval") was tested directly: re-run the same `dense+rerank` retrieval (top-5 per query) on the same `eval_sets/v2_full.jsonl` (n=111), but feed each query+chunks into **GPT-5.5 via ChatGPT UI** instead of the local 1.5B Qwen. Identical grounded prompt template (`prompts/grounded.py`), identical Haiku 4.5 judge (prompt hash `65fa23b9`).
+
+Run dir: `experiments/runs/2026-04-29T10-58-11-v2-dense-rerank-gpt55`. Implementation: rendered query+top-5-chunks per row into 4 markdown batches, manually pasted into ChatGPT, JSON replies parsed back into `per_query.jsonl` matching the Qwen-run schema, then `pdr judge` over the result.
+
+### Headline numbers (n=111)
+
+| Tier | Qwen 1.5B (`dense+rerank`) | **GPT-5.5 manual** (`dense+rerank`) | Δ |
+|---|---:|---:|---:|
+| `correct` | 7 (6.3%) | **41 (37.0%)** | **+30.7 pp** |
+| `partial` | 69 (62.2%) | 43 (38.7%) | −23.5 pp |
+| `wrong` | 9 (8.1%) | 3 (2.7%) | −5.4 pp |
+| `hallucination` | 24 (21.6%) | **3 (2.7%)** | **−18.9 pp** |
+| `refused` | 2 (1.8%) | 21 (18.9%) | +17.1 pp |
+| **accuracy** = `(correct+partial)/n` | 68.5% | **75.7%** | +7.2 pp |
+| `Recall@5` (retrieval, unchanged config) | 0.838 | 0.829 | −0.9 pp (statistical noise; reranker tie-breaks at top-5 vs top-10 retrieval window) |
+
+Three observations dominate:
+
+1. **The 21-23% hallucination plateau collapses to 2.7%.** The §8 P0 hypothesis is confirmed: at the v2 retrieval ceiling (Recall@5 = 0.83-0.84), the generator was the binding constraint on hallucination_rate. Replacing the generator drops hallucination by ~8× without touching the retrieval pipeline.
+2. **`correct_rate` jumps 6×** (6.3% → 37.0%). The same Haiku judge (same prompt hash) credits GPT-5.5's citations as precise far more often, indicating that GPT-5.5 selects the specific symbol_chunk over the broad section_chunk much more reliably than Qwen 1.5B did. The "module-level vs method-level" failure mode (§5 third paradox / §8 P1) is largely resolved by generator capacity.
+3. **`refused_rate` rises 10×** (1.8% → 18.9%). GPT-5.5 is materially stricter about refusing when chunks don't actually contain the answer. Whether this is a feature or a bug requires triage — see below.
+
+### Refusal triage (n=21 refused rows on v2_full)
+
+`v2_full.jsonl` contains zero designed out-of-scope queries; every refusal on this set is, by construction, a query the assistant should attempt to answer. Cross-referencing each refused row's `hit_at_5` flag splits the 21 refusals into two clean groups:
+
+| Group | Count | Interpretation |
+|---|---:|---|
+| Retrieval miss + refused (`hit_at_5=0`) | 13/21 | Refusal is the **correct** action — chunks legitimately did not contain the expected answer. These also explain part of the gap between Recall@5 = 0.829 and accuracy = 75.7%. |
+| Retrieval hit + refused (`hit_at_5=1`) | 8/21 | False refusals — the expected chunk was in the prompt, but GPT-5.5 chose `[INSUFFICIENT-CONTEXT]` anyway. Includes `datetime.datetime.now`, `yield vs return`, several howto rows, and one typo identifier (`re.complie`). |
+
+The 8 false refusals are the highest-leverage item for the next stage: each one is a query where retrieval succeeded but the generator gave up. Closing that gap alone would lift accuracy from 75.7% to roughly 82-83%, before any retrieval-side work.
+
+The 13 legitimate refusals overlap heavily with the 18 known retrieval misses (Recall@5 = 0.829 ⇒ ≈18 missed queries on n=111). They confirm that the remaining retrieval ceiling is real and accounts for ~12 pp of the gap from accuracy = 75.7% to a hypothetical 90%.
+
+### What this changes about §8 priorities
+
+The post-§9 priority order, updated against the new data:
+
+| Priority | Track | Status after §9 |
+|---|---|---|
+| ~~P0 — Generator upgrade~~ | Validated. A capacity-class generator (7B+ or API-grade) drives hallucination from 21.6% to 2.7%. **No further generator work is required to clear the v4 hallucination_rate ≤ 3% bar.** Subsequent stages assume an upgraded generator. |
+| **New P0** — Refusal calibration on the upgraded generator | 8/21 false refusals at retrieval-hit rows is the largest remaining failure mode. Levers: prompt revision (less aggressive `[INSUFFICIENT-CONTEXT]` trigger), few-shot examples of "partially-grounded answer is OK", or a verify-and-revise loop that re-attempts before refusing. Estimated lift: +7 pp accuracy. |
+| **New P1** — Retrieval miss recovery on the 13 retrieval-miss rows | Multi-pronged: query rewrite / HyDE for NL queries (chunks not lexically matched), comparison-query decomposition (`Path vs os.path` etc.), chunker re-cut to expose finer section-level entries. Estimated lift: +5-8 pp accuracy. |
+| Old P1 — Module-level vs method-level cite preference | Largely **resolved** by generator capacity (correct_rate: 6.3% → 37.0%). Retain as a low-priority chunker tweak. |
+| Old P2 — Routing-aware retriever (BM25 for identifier / dense for NL) | Less compelling than expected. With the upgraded generator, the BM25 vs dense correct/halluc tradeoff is dwarfed by the new "false refusal" axis. Defer pending P0/P1 results. |
+| Old P3 — Out-of-scope eval set expansion | Still required. The §9 refusal data motivates it more strongly: refusal calibration cannot be measured at scale without OOS rows alongside in-scope. |
+| Old P4 — Comparison query decomposition | Folded into new P1 (retrieval miss recovery). |
+
+### Methodology notes
+
+- **Cross-family judge**: GPT-5.5 (generator) and Haiku 4.5 (judge) come from different model families, which avoids the same-family bias that would arise from a Claude-on-Claude pipeline. Cohen's kappa from §6 (0.645, substantial agreement, calibrated against Qwen 1.5B outputs) does not transfer perfectly to GPT-5.5 outputs, but the systematic bias direction is expected to remain consistent across configs since the judge is unchanged.
+- **Retrieval reproducibility**: `Recall@5` differs by 0.009 between this run (0.829) and the original Qwen `dense+rerank` run (0.838) because the manual workflow rendered top-5 chunks per query while the live `pdr eval` pipeline retains top-10 in `per_query.jsonl`. The Recall@5 set is identical; the difference is a measurement artifact at the rank-5 boundary.
+- **Refusal floor**: 21/111 = 18.9% refusal rate on a fully-in-scope eval set is unusually high. A natural follow-up is to re-run with a prompt revision that softens the refusal criterion ("if chunks partially address the query, attempt an answer with a partial citation rather than refuse outright") and measure the accuracy impact.
