@@ -7,16 +7,19 @@ dense, no rerank) and the eval-set findings that motivated v1 / v2.
 
 | Section | Topic | State |
 |---------|-------|-------|
-| §1 | Ingest — download docs + record manifest | ✅ done |
-| §2 | Parse `objects.inv` | ✅ done |
-| §3 | Chunker — `symbol_chunk` + `section_chunk` | ✅ done |
-| §4 | Symbol index — exact + fuzzy multi-candidate | ✅ done |
-| §5 | BM25 index + analyzer | ✅ done |
-| §6 | Query router (heuristic identifier vs natural_language) | ✅ done |
-| §7 | CLI (`pdr ingest` / `pdr build-index` / `pdr search` / `pdr eval`) | ✅ done |
-| §8 | Eval set v0 (`eval_sets/v0_core.jsonl`, n=34) | ✅ done |
-| §9 | Eval metrics + run writer | ✅ done |
-| §10 | Experiment narrative (this document) | ✅ done |
+| (bootstrap) | Project scaffolding (`pyproject.toml`, package layout) | ✅ done (commit `3c6a9ff`) |
+| §1 | Ingest — download docs + record manifest | ✅ done (commit `109d100`) |
+| §2 | Parse `objects.inv` | ✅ done (commit `94f6ac5`) |
+| §3 | Chunker — `symbol_chunk` + `section_chunk` | ✅ done (commit `a0598b6`) |
+| §4 | Symbol index — exact + fuzzy multi-candidate | ✅ done (commit `0eb8e67`) |
+| §5 | BM25 index + analyzer | ✅ done (commit `a9ba654`) |
+| §6 | Query router (heuristic identifier vs natural_language) | ✅ done (commit `31cdb52`) |
+| §7 | CLI (`pdr ingest` / `pdr build-index` / `pdr search`) | ✅ done (commit `9195095`) |
+| §8 | Eval set v0 (`eval_sets/v0_core.jsonl`) + JSONL schema validator | ✅ done (commit `d119af5`) |
+| §9 | Eval metrics + run writer + `pdr eval` subcommand | ✅ done (commit `4b82d18`) |
+| §10 | Experiment narrative + first run snapshot (this document) | ✅ done (commit `a821cf2`) |
+| (post-v0) | README with status / architecture / roadmap | ✅ done (commit `7f8cf3e`) |
+| (post-v0) | Rename `v0_core_30.jsonl` → `v0_core.jsonl` (count agnostic) | ✅ done (commit `5ab6f87`) |
 
 ## Reproducibility
 

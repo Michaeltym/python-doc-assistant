@@ -9,13 +9,16 @@ v2 / v3.
 | Section | Topic | State |
 |---------|-------|-------|
 | §1 | Generator ABC + Answer dataclass | ✅ done (commit `b14129f`) |
-| §2 | grounded prompt template + parser | ✅ done (commit `b14129f`) |
-| §3 | QwenGenerator wiring | ✅ done (commit `8b440ba`) |
-| §4 | Qwen-Coder side-by-side | ✅ done (commit `ecc3e53` + this doc) |
-| §5 | CLI `--debug` extension (`pdr ask`) | ✅ done (commit + this doc) |
-| §6 | 4-tier human scoring on full eval set | ✅ done (this doc + `human_scores.jsonl` per run) |
-| §7 | Refusal rate on out-of-scope eval set | ✅ done (this doc + 2 oos run snapshots) |
-| §8 | v2 priority recommendation | ✅ done (this doc, see §8 below) |
+| §2 | Grounded prompt template + parser | ✅ done (commit `b14129f`) |
+| §3 | QwenGenerator wiring + numeric `[N]` citation format | ✅ done (commit `8b440ba`) |
+| §3 | Smoke findings + prompt iteration log | ✅ done (commit `ff5c990`) |
+| §4 | `pdr eval --model` (retrieval+generation runs) | ✅ done (commit `ecc3e53`) |
+| §4 | Qwen vs Coder side-by-side narrative + 2 run snapshots | ✅ done (commit `d6e2c21`) |
+| §5 | `pdr ask` CLI + `--debug` + chunker fragmentation finding | ✅ done (commit `704180f`) |
+| §6 | `human_scoring` module + 4-tier scores + narrative | ✅ done (commit `735724c`) |
+| §7 | Out-of-scope eval set (n=20) | ✅ done (commit `4e97941`) |
+| §7 | Refusal rate runs (Base + Coder) + §8 v2 priority | ✅ done (commit `5b0960c`) |
+| §8 | v2 priority recommendation (see §8 below) | ✅ done |
 
 ## Reproducibility
 

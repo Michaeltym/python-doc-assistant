@@ -6,15 +6,22 @@ Living document. Filled in incrementally as §1 → §7 of `plans/v2-ablation.md
 
 | Section | Topic | State |
 |---------|-------|-------|
-| §1 | Dense embedding index (`indexes/dense_index.py`) | ✅ done (commits `f2bb1bb` + `23fda6e`) |
+| (prereq) | Add `embedding` + `rerank` extras (`sentence-transformers`) | ✅ done (commit `ef9b3c8`) |
+| §1 | Dense embedding index (`indexes/dense_index.py`) | ✅ done (commits `f2bb1bb` backbone + `23fda6e` impl) |
 | §2 | Hybrid merge — RRF + linear (`retrieval/hybrid.py`) | ✅ done (commit `b48f7f4`) |
 | §3 | Cross-encoder rerank (`retrieval/rerank.py`) | ✅ done (commit `cb2c81f`) |
 | §4 | Expand eval set 34 → 111 (`eval_sets/v2_full.jsonl`) | ✅ done (commit `3d1190d`) |
 | §5 prereq | Retrieval factory + CLI flags | ✅ done (commit `e3993ef`) |
 | §5 — retrieval-only matrix | 12 configs against v2_full | ✅ done (commit `3073f36`) |
-| §5 — generation @ recommended config | dense+rerank+qwen | ✅ done (commit `7d57dd6`) |
-| §5 — generation @ remaining 5 configs | bm25 / dense / hybrid-rrf / α=0.3 / rrf+rerank | ⏳ TODO |
-| §6 | LLM-as-judge (`evaluation/judge.py`) — module + agreement check | ✅ done (commits `0f75a05` + `5875fb3`); ablation runs pending |
+| §5 — generation @ recommended config | dense+rerank+qwen run snapshot | ✅ done (commit `7d57dd6`) |
+| Codex review fixes | refused→cited_chunk_ids cleared; `open` row anchors | ✅ done (commit `f745ebe`) |
+| Living narrative | `experiments/v2-ablation.md` skeleton | ✅ done (commit `c4e93b5`) |
+| §5 — generation @ remaining 5 configs | symbol+bm25 / dense / hybrid-rrf / α=0.3 / rrf+rerank | ⏳ TODO (background) |
+| §6 | LLM-as-judge module (`evaluation/judge.py`) + 30 tests | ✅ done (commit `0f75a05`) |
+| §6 | Judge prompt tuning + sample stability | ✅ done (commit `5875fb3`) |
+| §6 | Agreement check data + decision (kappa 0.645, exact 0.733, accept C) | ✅ done (commit `262303b`) |
+| Format | Unify v0 / v1 / v2 narrative skeleton | ✅ done (commit `a7e6940`) |
+| §6 | Judge runs on 6 generation configs (666 rows) | ⏳ TODO |
 | §7 | Narrative — rerank contribution / dense vs bm25 / α / final config | ⏳ TODO |
 | §8 | v3 priority recommendation | ⏳ TODO |
 
