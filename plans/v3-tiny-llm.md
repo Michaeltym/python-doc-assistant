@@ -89,6 +89,13 @@ Run on the same eval set (the 100–200 entries from v2):
 
 Comparison metrics: Recall@5 (retrieval layer is unchanged, should be identical), answer quality, hallucination rate, latency.
 
+**Judge methodology — Opus 4.7 manual copy-paste (v3+ onward):**
+
+- v2 §6 used Anthropic API + Haiku 4.5 (prompt hash `65fa23b9`, kappa 0.645)
+- From v3 onward, the judge moves to **Opus 4.7 via Claude Code manual copy-paste workflow**: per_query.jsonl is rendered into batches of 20-50 cases, pasted into Claude, the JSON reply is parsed back into `judge_scores.jsonl`. Implementation scripts (`scripts/judge_render_batch.py`, `scripts/judge_parse_batch.py`) are part of v3 deliverables.
+- New `judge_prompt_hash` (Opus 4.7 prompt may simplify vs Haiku); v2 vs v3+ hallucination_rate **not directly comparable** (different judge model)
+- v3 vs v4 internal deltas remain valid (consistent judge model within one cohort)
+
 ### 8. Experiment narrative document
 
 File: `experiments/v3-tinydocs-vs-qwen.md`

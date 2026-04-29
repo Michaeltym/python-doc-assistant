@@ -362,12 +362,12 @@ The 6 v0 baseline failures (recall@5=0) split: dense alone fixes 4
 
 | α (linear hybrid) | Recall@5 | Recall@10 | MRR | hallucination_rate |
 |---:|---:|---:|---:|---:|
-| 0.0 (dense) | 0.811 | 0.892 | 0.691 | TBD |
-| 0.2 | 0.802 | 0.901 | 0.694 | TBD (not run for generation) |
+| 0.0 (dense) | 0.811 | 0.892 | 0.691 | TBD (judge on `dense-qwen`) |
+| 0.2 | 0.802 | 0.901 | 0.694 | N/A (not run for generation) |
 | 0.3 | **0.802** | **0.910** | **0.692** | TBD (judge on `hybrid-linear-a03-qwen`) |
-| 0.5 | 0.784 | 0.883 | 0.647 | TBD |
-| 0.7 | 0.784 | 0.865 | 0.601 | TBD |
-| 0.8 | 0.748 | 0.865 | 0.591 | TBD |
+| 0.5 | 0.784 | 0.883 | 0.647 | N/A (not run for generation) |
+| 0.7 | 0.784 | 0.865 | 0.601 | N/A (not run for generation) |
+| 0.8 | 0.748 | 0.865 | 0.591 | N/A (not run for generation) |
 | 1.0 (bm25) | 0.712 | 0.766 | 0.567 | TBD (judge on `symbol-bm25-qwen`) |
 
 Retrieval optimum: **α=0.3** (highest Recall@10 at 0.910, ties for top
@@ -404,19 +404,28 @@ Justification:
   load) — 0.811/0.892/0.691, only 2.7 pp Recall@5 short of the rerank
   config.
 
-## §8 — v3 priority recommendation (TODO)
+## §8 — v3 priority recommendation
 
-Will be informed by §6 + §7. Early signals:
+Skeleton ordering. Cells flagged **TBD** are blocked on §6 judge runs
+(6 configs × n=111). Once judge completes, the priority numbers below
+are revisited against measured `hallucination_rate` deltas.
 
-- **Module-level vs method-level citation** — new v2 failure mode
-  (dense+rerank surfaces section_chunks higher than v1's BM25 path; 1.5B
-  model prefers broader chunks). Could be addressed by chunker boundary
-  refinement (split section_chunks more aggressively) or rerank prompt
-  tweaks.
-- **1.5B Instruct ceiling** still likely the dominant constraint after
-  retrieval is solved. plan §142's 7B-upgrade decision point should
-  fire if §6 hallucination_rate stays > 10 % on the dense+rerank config.
-- **Chunker fragmentation** (v1 §5 finding — code blocks tokenized
-  one-per-line) may have less impact in v2 once dense embedding is in
-  the mix (semantic match doesn't need clean code formatting), but
-  worth verifying with a side-by-side on howto queries.
+| Priority | Track | Rationale | Cost | Decision blocker |
+|---|---|---|---|---|
+| P0 | **Generator upgrade** (1.5B Instruct → 7B Coder, or API-grade Sonnet-class) | Plan §142 cite-rate floor: v1 baseline hallucinated at 14.7% with retrieval already solved on identifier queries. v2 retrieval climbs to Recall@5=0.838 but cited-match-expected stayed at 35.3% on v0_core (no improvement). Citation behavior is **model-bound**, not retrieval-bound. | High — 7B requires ~14 GB VRAM (MPS infeasible at fp16, needs quantization or API) | dense+rerank `hallucination_rate` from §6 judge — fire if > 10% |
+| P1 | **Module-level → method-level cite preference** | New v2 failure mode (§5 third paradox): dense+rerank surfaces section_chunks higher than v1's BM25 path; 1.5B prefers broader chunks. Chunker boundary refinement (split section_chunks more aggressively when they wholly contain symbol_chunks) or in-prompt nudge ("prefer specific over general"). | Low — chunker tweak + re-eval on v2_full | confirm magnitude post-judge (currently 3 known cases on v0_core) |
+| P2 | **Out-of-scope expansion in eval set** | v2_full has 0 OOS rows (kept in `eval_sets/v1_out_of_scope_20.jsonl`). Refusal calibration not measured at v2 scale. v1 baseline OOS recall was unmeasured against v2's better retriever. | Low — extend OOS eval set to 40+ rows + mix into v3 main set | none |
+| P3 | **Query decomposition for `match_policy=all` comparison** | Comparison rows are 24/111 in v2_full and account for 2/3 of `match_policy=all` schema. Multi-hop retrieval (decompose "json vs pickle" → 2 retrievals → merge) likely gains where dense alone is borderline. | Medium — router rule + retrieval orchestration + new eval policy | confirm Q1 perf ceiling on comparison subset |
+| P4 | **Reranker swap** | Current `bge-reranker-base` already lifts Recall@5 +2.7 pp on dense. Larger / instruction-tuned reranker (`bge-reranker-large`, `monot5-3b`) could compress remaining hallucination, but bounded by top-20 candidate set. | Medium — model swap + config + latency cost | P0 likely dominates |
+
+### Deferred (lower expected ROI)
+
+- **Embedding model swap** (`bge-small-en-v1.5` 384-dim → `bge-m3` 1024-dim or `gte-large`) — dense+rerank already at +10.8 pp over v0; marginal gain expected vs. P0's expected 5-10 pp hallucination drop.
+- **Hybrid α-sweep refinement** — α=0.3 is the inflection; pure dense beats every α; more α points won't change the picture.
+- **Symbol index expansion** — already exhaustive against `objects.inv`; no remaining fail mode attributable to symbol-index recall.
+
+### Open questions for §8 finalization (post-judge)
+
+1. **Does rerank reduce hallucination, or just shuffle rank?** — Q1 cells will answer. If `hallucination_rate(dense)` ≈ `hallucination_rate(dense+rerank)`, rerank is a Recall@5 cosmetic — re-rank P4 down vs latency cost.
+2. **Is the BM25 win on identifier-exact queries actually reducing hallucination, or just re-ordering correct-but-cited-elsewhere chunks?** — α-sweep `hallucination_rate` column will diagnose; if `symbol+bm25` < `dense` on hallucination, ensemble routing (BM25 for identifier, dense for NL) becomes a P1 candidate.
+3. **Does the v2 retrieval ceiling (Recall@5 = 0.838) leave headroom?** — 18/111 queries don't surface expected chunks in top-5. Manual triage of those 18 will tell whether to invest in P0 (model) or chunker.

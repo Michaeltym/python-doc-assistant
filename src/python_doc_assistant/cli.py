@@ -494,6 +494,14 @@ def judge_cmd(
         raise FileNotFoundError(f"{per_query_path} does not exist")
     started = datetime.now(timezone.utc).isoformat()
     with per_query_path.open("r", encoding="utf-8") as f:
+        total = sum(1 for line in f if line.strip())
+    if max_rows is not None:
+        total = min(total, max_rows)
+    click.echo(f"judge {run_dir.name} — {total} rows", nl=True)
+    import time as _time
+
+    last_t = _time.monotonic()
+    with per_query_path.open("r", encoding="utf-8") as f:
         for index, line in enumerate(f, start=1):
             if max_rows is not None and index > max_rows:
                 break
@@ -527,9 +535,17 @@ def judge_cmd(
                     max_tokens=max_tokens,
                 )
                 records.append(record)
+                tier = record.tier
             except JudgeError as e:
                 errors += 1
-                click.echo(f"parse-fail line {index}: {e}")
+                tier = f"PARSE-FAIL: {e}"
+            now = _time.monotonic()
+            click.echo(
+                f"[{index:3d}/{total}] dt={now - last_t:5.2f}s tier={tier}",
+                nl=True,
+            )
+            sys.stdout.flush()
+            last_t = now
 
     write_judge_records(records, judge_scores_path)
     judge_agg = aggregate(judge_records_to_human_scores(records))
