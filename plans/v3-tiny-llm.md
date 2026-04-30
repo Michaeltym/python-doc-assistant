@@ -46,10 +46,21 @@ Two options:
 
 File: `data/pretrain/` (`.gitignore`)
 
-- General-purpose text: a small slice of `FineWeb-Edu`
-- Python documentation: chunks produced by v0 ingest
-- Ratio: 80% general / 20% docs
-- Slice with a fixed seed to keep it reproducible
+**MVP scope: Python docs only.** Build a `corpus.jsonl` from the v0
+chunks (`data/chunks/<docs_version>/<sha>/chunks.jsonl`), shuffled
+with a fixed seed for reproducibility, plus a sibling `manifest.json`
+recording the input path, seed, line count, total bytes, and build
+timestamp.
+
+Adding general-purpose text (e.g. a slice of `FineWeb-Edu` at an
+80% general / 20% docs ratio) was the original plan, but is deferred:
+at the v3 parameter budget (~50–100M) and on a single-machine training
+target, the broader vocabulary coverage from a general-text mix does
+not materially change the "pipeline-through" learning objective. A
+docs-only corpus keeps §3 implementation small (~80 lines) and lets
+v3 §4–§7 advance without an extra dataset dependency. Mixing general
+text remains a sensible follow-up if v3 quality work is later
+revisited.
 
 ### 4. Pretraining
 
@@ -134,6 +145,6 @@ Under the practical constraints of 2 weeks + local MPS, the MVP bar is set at **
 **Stretch goal stage (only decided if time remains after MVP):**
 
 - Whether to switch to cloud GPU (Modal / Lambda / RunPod, calculate the budget)
-- Pretraining data mix ratio (general : docs)
+- Whether to revisit the general-text data mix (FineWeb-Edu or similar) — deferred at MVP per §3
 - SFT data distill source (Qwen vs Claude, compliance + quality tradeoff)
 - When the 2 weeks are up, "stop" stretch goals; do not drag down the main project
