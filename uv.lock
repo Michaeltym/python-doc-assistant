@@ -1519,6 +1519,10 @@ retrieval = [
     { name = "rank-bm25" },
     { name = "rapidfuzz" },
 ]
+tinydocs = [
+    { name = "tokenizers" },
+    { name = "torch" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1545,11 +1549,13 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'embedding'" },
     { name = "sentence-transformers", marker = "extra == 'rerank'" },
     { name = "sphobjinv", marker = "extra == 'ingest'" },
+    { name = "tokenizers", marker = "extra == 'tinydocs'" },
     { name = "torch", marker = "extra == 'generation'" },
+    { name = "torch", marker = "extra == 'tinydocs'" },
     { name = "transformers", marker = "extra == 'generation'" },
     { name = "types-requests", marker = "extra == 'dev'" },
 ]
-provides-extras = ["dev", "ingest", "retrieval", "generation", "embedding", "rerank", "judge"]
+provides-extras = ["dev", "ingest", "retrieval", "generation", "embedding", "rerank", "judge", "tinydocs"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.0.3" }]
