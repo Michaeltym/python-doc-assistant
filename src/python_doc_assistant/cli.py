@@ -193,10 +193,28 @@ def search(query: str, k: int, version: str | None, docs_sha: str | None, debug:
 @click.argument("query")
 @click.option("--k", "k", type=int, default=5, help="Top-k chunks to retrieve.")
 @click.option(
+    "--backend",
+    type=click.Choice(["qwen", "tinydocs"]),
+    default="qwen",
+    help="Generator backend. 'tinydocs' loads a self-trained checkpoint (v3 §6).",
+)
+@click.option(
     "--model",
     "model_id",
     default="Qwen/Qwen2.5-1.5B-Instruct",
-    help="HuggingFace model_id for the generator.",
+    help="HuggingFace model_id (qwen backend only).",
+)
+@click.option(
+    "--tinydocs-ckpt",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to TinyDocs step_<N>.pt (required when --backend=tinydocs).",
+)
+@click.option(
+    "--tinydocs-tok",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to TinyDocs tokenizer.json (required when --backend=tinydocs).",
 )
 @click.option("--version", default=None, help="Override config.toml DOCS_VERSION.")
 @click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
@@ -208,7 +226,10 @@ def search(query: str, k: int, version: str | None, docs_sha: str | None, debug:
 def ask(
     query: str,
     k: int,
+    backend: str,
     model_id: str,
+    tinydocs_ckpt: str | None,
+    tinydocs_tok: str | None,
     version: str | None,
     docs_sha: str | None,
     debug: bool,
@@ -285,11 +306,24 @@ def ask(
     retrieve_fn = _make_retrieve_fn(symbol_index, bm25_index, chunks_by_id)
     retrieved = retrieve_fn(query, k)
     gen_chunks = [chunks_by_id[r.chunk_id] for r in retrieved if r.chunk_id in chunks_by_id]
-    from python_doc_assistant.generation.qwen_backend import QwenGenerator
+    from python_doc_assistant.generation.interface import Generator
     from python_doc_assistant.prompts.grounded import build_grounded_prompt
     from python_doc_assistant.retrieval.router import classify
 
-    generator = QwenGenerator(model_id)
+    generator: Generator
+    if backend == "tinydocs":
+        if tinydocs_ckpt is None or tinydocs_tok is None:
+            raise click.UsageError("--backend=tinydocs requires --tinydocs-ckpt and --tinydocs-tok")
+        from python_doc_assistant.generation.tinydocs_backend import TinyDocsGenerator
+
+        generator = TinyDocsGenerator(
+            checkpoint_path=Path(tinydocs_ckpt),
+            tokenizer_path=Path(tinydocs_tok),
+        )
+    else:
+        from python_doc_assistant.generation.qwen_backend import QwenGenerator
+
+        generator = QwenGenerator(model_id)
     qt = classify(query)
     answer = generator.generate(query, gen_chunks, query_type=qt)
     click.echo(answer.text or "[INSUFFICIENT-CONTEXT]")
