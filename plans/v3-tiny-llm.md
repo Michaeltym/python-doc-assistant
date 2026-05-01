@@ -2,6 +2,16 @@
 
 **Parent doc:** [../PLAN.md](../PLAN.md) §7 v3
 
+**Status:** ✅ MVP closed (commits `b839775` … `dc51663`). All four MVP completion
+criteria met; experiment narrative committed at
+`experiments/v3-tinydocs-vs-qwen.md`.
+
+**Follow-up:** [`v3.1-fineweb-sft.md`](v3.1-fineweb-sft.md) re-opens v3 to address
+the quality gap surfaced by §8 narrative (output is "doc-shaped noise"). v3.1
+swaps the docs-only pretrain for a FineWeb-Edu mix and scales SFT distillation
+from 122 to 1000+ samples. **Optional, learning-oriented**; does not block the
+main project just like v3 itself.
+
 **Prerequisite:** v2 is complete; however, this is a **learning-oriented side track** and does not block the main project.
 
 **Estimated duration:** +2 weeks
@@ -148,3 +158,37 @@ Under the practical constraints of 2 weeks + local MPS, the MVP bar is set at **
 - Whether to revisit the general-text data mix (FineWeb-Edu or similar) — deferred at MVP per §3
 - SFT data distill source (Qwen vs Claude, compliance + quality tradeoff)
 - When the 2 weeks are up, "stop" stretch goals; do not drag down the main project
+
+---
+
+## Why v3.1 was opened post-MVP
+
+The v3 §8 narrative documented two undeniable shortcomings of the closed
+MVP that the MVP scope explicitly accepted but that read poorly when seen
+side-by-side with Qwen output:
+
+1. **Output is "doc-shaped noise."** The 10k-step `run-10k-b8` ckpt produces
+   text like `"- - name - file = foo to create a path to the archive.
+   Changed in version 3.6"` — recognizable docs vocabulary stitched together
+   without grammar. Qwen at the same task produces grammatical instructional
+   prose with `[N]` citations. The gap is too large to attribute to scale
+   alone; the MVP base never learned English structure because the corpus
+   was 2.6 M tokens of one narrow domain.
+2. **SFT alone cannot rescue the docs-only base.** A 122-sample SFT
+   experiment in a post-MVP feasibility exploration produced 26 %
+   qualitative wins, 18 % mode collapses, and 56 % no-change outcomes — net
+   flat. The mechanism worked (one query produced a verbatim copy of the
+   Qwen exemplar's literal), but the base could not produce coherent
+   English answer prose to be SFT-tuned in the first place.
+
+A 10k-step probe with a FineWeb-Edu mix at matched compute (same model size,
+same step count) showed grammatical English emerged
+(`"the city was in a very small area. The city was built in the early 18th
+century..."`) where the docs-only baseline produced disconnected fragments.
+That probe motivates v3.1.
+
+v3.1 is **strictly optional**, like v3 itself — not a v4 prereq, not a
+production deliverable. If v3.1 ships well, the v3 narrative gains a
+compelling "before / after" comparison; if it stalls, v3 stays closed at
+the MVP bar and the project moves on. See [`v3.1-fineweb-sft.md`](v3.1-fineweb-sft.md)
+for the full plan.
