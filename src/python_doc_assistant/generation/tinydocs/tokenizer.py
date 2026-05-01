@@ -30,6 +30,7 @@ class TinyDocsTokenizer:
         self._eos_id = self.token_to_id["<eos>"]
         self._unk_id = self.token_to_id["<unk>"]
         self._sp_id = self.token_to_id["<sp>"]
+        self._encode_cache: dict[str, list[int]] = {}
 
     @property
     def vocab_size(self) -> int:
@@ -107,7 +108,11 @@ class TinyDocsTokenizer:
         )
 
     def _encode_token(self, token: str) -> list[int]:
+        if token in self._encode_cache:
+            return self._encode_cache[token]
         chars = list(token)
         for pair in self.merges:
             chars = merge_pair(chars, pair)
-        return [self.token_to_id.get(c, self.unk_id) for c in chars]
+        result = [self.token_to_id.get(c, self.unk_id) for c in chars]
+        self._encode_cache[token] = result
+        return result
