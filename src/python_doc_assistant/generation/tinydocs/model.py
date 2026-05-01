@@ -199,6 +199,16 @@ class TinyDocsModel(nn.Module):
         if config.tie_word_embeddings:
             self.vocab_head.weight = self.embeddings.weight
 
+        def _init_weights(module: nn.Module) -> None:
+            if isinstance(module, nn.Linear):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Embedding):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+        self.apply(_init_weights)
+
     def forward(
         self,
         token_ids: Tensor,  # shape is [B, T]
