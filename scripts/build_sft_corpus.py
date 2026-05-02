@@ -60,7 +60,7 @@ DEFAULT_EVAL_SETS = (
     Path("eval_sets/v0_core.jsonl"),
     Path("eval_sets/v1_out_of_scope_20.jsonl"),
 )
-ANSWER_MAX_NEW_TOKENS = 256  # 128 cuts off mid-example; [N] sits at end
+ANSWER_MAX_NEW_TOKENS = 384  # 256 still truncated long ctypes/struct examples
 QUESTION_MAX_NEW_TOKENS = 64
 TOP_K = 3
 
