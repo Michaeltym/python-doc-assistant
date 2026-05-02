@@ -8,6 +8,7 @@ from python_doc_assistant.generation.tinydocs.tokenizer import TinyDocsTokenizer
 from python_doc_assistant.generation.tinydocs.tokenizer_train import (
     pretokenize,
     train_bpe,
+    train_bpe_incremental,
 )
 
 # ------------------------------------------------------------------
@@ -61,6 +62,86 @@ def test_train_bpe_returns_merges_in_order() -> None:
     vocab, merges = train_bpe(corpus, vocab_size=20, special_tokens=SPECIAL_TOKENS)
     # First merge should be either (a, a) or (b, b) since those are most frequent
     assert merges[0] in {("a", "a"), ("b", "b")}
+
+
+# ------------------------------------------------------------------
+# train_bpe_incremental (v3.1 §1.2)
+#
+# Equivalence with naive `train_bpe` is the primary correctness gate.
+# We compare on small frequency-unambiguous corpora so tie-breaking
+# (which can diverge between naive and incremental — see docstring on
+# train_bpe_incremental) doesn't muddy the comparison.
+# ------------------------------------------------------------------
+
+
+def test_incremental_matches_naive_simple_corpus() -> None:
+    """Same (vocab, merges) as naive on a small unambiguous corpus."""
+    corpus = ["aaaa bbbb"] * 100
+    vocab_n, merges_n = train_bpe(corpus, vocab_size=12, special_tokens=SPECIAL_TOKENS)
+    vocab_i, merges_i = train_bpe_incremental(
+        corpus, vocab_size=12, special_tokens=SPECIAL_TOKENS
+    )
+    assert vocab_i == vocab_n
+    assert merges_i == merges_n
+
+
+def test_incremental_matches_naive_repeated_pairs() -> None:
+    """Word with the same pair appearing multiple times (e.g., 'aaaa')."""
+    corpus = ["aaaaa"] * 50
+    vocab_n, merges_n = train_bpe(corpus, vocab_size=10, special_tokens=SPECIAL_TOKENS)
+    vocab_i, merges_i = train_bpe_incremental(
+        corpus, vocab_size=10, special_tokens=SPECIAL_TOKENS
+    )
+    assert vocab_i == vocab_n
+    assert merges_i == merges_n
+
+
+def test_incremental_matches_naive_multiword_corpus() -> None:
+    """Mixed corpus, target small vocab to force several merges."""
+    corpus = (
+        ["hello world hello"] * 10
+        + ["foo bar foo bar foo"] * 5
+        + ["alpha beta gamma"] * 3
+    )
+    vocab_n, merges_n = train_bpe(corpus, vocab_size=24, special_tokens=SPECIAL_TOKENS)
+    vocab_i, merges_i = train_bpe_incremental(
+        corpus, vocab_size=24, special_tokens=SPECIAL_TOKENS
+    )
+    assert set(vocab_i) == set(vocab_n)
+    # Merge multisets must match (order may differ on freq ties)
+    assert sorted(merges_i) == sorted(merges_n)
+
+
+def test_incremental_terminates_when_no_pairs_left() -> None:
+    """If target vocab size > base + all possible merges, loop should exit."""
+    corpus = ["a"] * 5  # only one char, no pairs to merge
+    vocab, merges = train_bpe_incremental(
+        corpus, vocab_size=100, special_tokens=SPECIAL_TOKENS
+    )
+    assert merges == []
+    # vocab = 5 specials + 1 unique char = 6
+    assert len(vocab) == 6
+
+
+def test_incremental_special_tokens_first() -> None:
+    """Same vocab ordering convention as naive: specials, base chars, merges."""
+    corpus = ["hello world"]
+    vocab, _ = train_bpe_incremental(
+        corpus, vocab_size=20, special_tokens=SPECIAL_TOKENS
+    )
+    assert vocab[: len(SPECIAL_TOKENS)] == list(SPECIAL_TOKENS)
+
+
+def test_incremental_reaches_target_vocab_size() -> None:
+    """Hits the exact target size when corpus has enough pairs to merge."""
+    corpus = (
+        ["hello world how are you today"] * 10
+        + ["the quick brown fox jumps over the lazy dog"] * 5
+    )
+    vocab, _ = train_bpe_incremental(
+        corpus, vocab_size=48, special_tokens=SPECIAL_TOKENS
+    )
+    assert len(vocab) == 48
 
 
 # ------------------------------------------------------------------
