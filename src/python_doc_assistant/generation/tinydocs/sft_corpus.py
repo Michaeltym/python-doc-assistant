@@ -11,6 +11,7 @@ script. The two pieces extracted here are unit-testable in isolation:
 
 from __future__ import annotations
 
+import re
 from typing import Final
 
 from python_doc_assistant.ingest.chunker import Chunk
@@ -31,6 +32,13 @@ DEFAULT_BROKEN_PATTERNS: Final[tuple[str, ...]] = (
     "I do not have",
 )
 
+# Matches `[N]` where N is a positive integer (citation markers). Used to
+# verify the answer cites at least one retrieved chunk. Empirical audit found
+# Qwen 1.5B drops the citation template on ~50 % of synthetic prose answers;
+# without this filter, SFT training data has half-cite-half-prose mix and
+# the student model never learns reliable citation discipline.
+_CITATION_RE = re.compile(r"\[(\d+)\]")
+
 
 def is_sft_rejected(
     answer: str,
@@ -38,6 +46,7 @@ def is_sft_rejected(
     *,
     min_chars: int = MIN_ANSWER_CHARS,
     broken_patterns: tuple[str, ...] = DEFAULT_BROKEN_PATTERNS,
+    require_citation: bool = True,
 ) -> str | None:
     """Return a rejection reason string, or None if the answer is accepted.
 
@@ -46,6 +55,9 @@ def is_sft_rejected(
       - "empty": answer is empty / whitespace-only
       - "too_short": len(answer) < min_chars
       - "matches:<pattern>": answer contains one of `broken_patterns`
+      - "no_citation": when `require_citation=True` and answer has no `[N]`
+        marker — added in v3.1 §6 third pass after audit found 50 % of
+        accepted records lacked citations and would hurt SFT training
 
     Used by the SFT corpus build to drop bad Qwen outputs *before* training
     so the student model does not learn to imitate them.
@@ -60,6 +72,8 @@ def is_sft_rejected(
     for p in broken_patterns:
         if p.lower() in answer.lower():
             return f"matches:<{p}>"
+    if require_citation and not _CITATION_RE.search(answer):
+        return "no_citation"
     return None
 
 

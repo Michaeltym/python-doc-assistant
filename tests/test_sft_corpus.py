@@ -57,8 +57,20 @@ def _section_chunk(chunk_id: str = "section:tutorial/datastructures#more-on-list
 
 
 def test_accepts_normal_answer() -> None:
-    long_text = "This is a perfectly normal answer that is well over the minimum length threshold."
+    long_text = "This is a perfectly normal answer with citation [1] over the minimum length."
     assert is_sft_rejected(long_text, refused=False) is None
+
+
+def test_rejects_no_citation_when_required() -> None:
+    """v3.1 §6 third pass: answers without `[N]` markers are dropped by default."""
+    text = "This is a long enough answer but contains no citation marker at all."
+    assert is_sft_rejected(text, refused=False) == "no_citation"
+
+
+def test_no_citation_filter_can_be_disabled() -> None:
+    """`require_citation=False` keeps the legacy behaviour."""
+    text = "This is a long enough answer but contains no citation marker at all."
+    assert is_sft_rejected(text, refused=False, require_citation=False) is None
 
 
 def test_rejects_refused() -> None:
@@ -101,7 +113,7 @@ def test_refused_takes_priority_over_short() -> None:
 
 def test_custom_min_chars_threshold() -> None:
     """Caller-provided `min_chars` overrides default."""
-    text = "exactly thirty-two characters!!!"  # 32 chars
+    text = "exactly thirty-two characters[1]!"  # 33 chars including citation
     # Using stricter threshold rejects this
     assert is_sft_rejected(text, refused=False, min_chars=64) == "too_short"
     # Default accepts it
@@ -118,10 +130,13 @@ def test_custom_broken_patterns_used() -> None:
     )
     assert reason is not None
     assert "FORBIDDEN-MARKER" in reason
-    # The default patterns are *not* applied when caller overrides
+    # The default patterns are *not* applied when caller overrides.
+    # `[INSUFFICIENT-CONTEXT]` doubles as the `[N]` citation regex match
+    # (it's `[<digits>]` shape — wait, no: contains "INSUFFICIENT-CONTEXT").
+    # Need an explicit `[1]` to satisfy the citation requirement.
     assert (
         is_sft_rejected(
-            "answer with [INSUFFICIENT-CONTEXT] but caller passed empty broken_patterns",
+            "answer with [INSUFFICIENT-CONTEXT] [1] but caller passed empty broken_patterns",
             refused=False,
             broken_patterns=(),
         )
