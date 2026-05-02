@@ -60,7 +60,7 @@ DEFAULT_EVAL_SETS = (
     Path("eval_sets/v0_core.jsonl"),
     Path("eval_sets/v1_out_of_scope_20.jsonl"),
 )
-ANSWER_MAX_NEW_TOKENS = 128
+ANSWER_MAX_NEW_TOKENS = 256  # 128 cuts off mid-example; [N] sits at end
 QUESTION_MAX_NEW_TOKENS = 64
 TOP_K = 3
 
@@ -341,6 +341,28 @@ def _run_one(
     """
     qt = classify(query)
     result = route(query, symbol_index=symbol_index, bm25_index=bm25_index, k=TOP_K)
+
+    # Retrieval-quality filter for synthetic path: when we already know the
+    # source chunk, require it to appear in retrieval. Skips ~30 % of synthetic
+    # samples but cuts the "fabricated API" failure mode (audit found 3/20
+    # fabrications were on retrieval misses).
+    if source_chunk_id is not None and source_chunk_id not in result.chunk_ids:
+        record_miss: dict[str, Any] = {
+            "query": query,
+            "query_type": qt.value,
+            "source": source,
+            "source_chunk_id": source_chunk_id,
+            "retrieved_chunk_ids": list(result.chunk_ids),
+            "rejection_reason": "retrieval_miss",
+        }
+        rej_f.write(json.dumps(record_miss) + "\n")
+        rej_f.flush()
+        n_rejected += 1
+        rejection_reasons["retrieval_miss"] = (
+            rejection_reasons.get("retrieval_miss", 0) + 1
+        )
+        return n_accepted, n_rejected
+
     retrieved = [
         chunks_by_id[cid] for cid in result.chunk_ids if cid in chunks_by_id
     ]
