@@ -51,13 +51,22 @@ def main(corpus: str, vocab_size: int, out: str, incremental: bool) -> None:
     click.echo(f"loaded {len(texts)} texts from {corpus_path}")
 
     special_tokens = ("<pad>", "<bos>", "<eos>", "<unk>", "<sp>")
-    train_fn = train_bpe_incremental if incremental else train_bpe
     click.echo(
         f"training BPE (vocab_size={vocab_size}, "
         f"algo={'incremental' if incremental else 'naive'})..."
     )
     t0 = time.time()
-    vocab, merges = train_fn(texts, vocab_size=vocab_size, special_tokens=special_tokens)
+    if incremental:
+        vocab, merges = train_bpe_incremental(
+            texts,
+            vocab_size=vocab_size,
+            special_tokens=special_tokens,
+            show_progress=True,
+        )
+    else:
+        vocab, merges = train_bpe(
+            texts, vocab_size=vocab_size, special_tokens=special_tokens
+        )
     elapsed = time.time() - t0
     click.echo(f"  done in {elapsed:.1f}s")
 

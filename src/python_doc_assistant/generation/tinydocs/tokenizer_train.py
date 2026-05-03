@@ -94,6 +94,7 @@ def train_bpe_incremental(
     *,
     vocab_size: int,
     special_tokens: tuple[str, ...],
+    show_progress: bool = False,
 ) -> tuple[list[str], list[tuple[str, str]]]:
     """Same contract as `train_bpe`, but maintains pair-frequency state across
     merges so each iteration only updates the words affected by the merged
@@ -166,14 +167,24 @@ def train_bpe_incremental(
 
     unique_chars = sorted(set(tokens_str))
     vocab.extend(unique_chars)
+
+    pbar = None
+    if show_progress:
+        from tqdm import tqdm
+
+        pbar = tqdm(
+            total=vocab_size,
+            initial=len(vocab),
+            desc="BPE merges",
+            unit="merge",
+        )
+
     while len(vocab) < vocab_size:
-        if sum(1 for v in pair_freqs.values() if v > 0) == 0:
+        if not pair_freqs:
             break
         best_pair = max(pair_freqs, key=pair_freqs.__getitem__)
-        # (c, d)
         new_token = best_pair[0] + best_pair[1]
         affected_tokens = list(pair_to_words[best_pair])
-        # bcd, cde
         for token in affected_tokens:
             chars, freq = splits[token]
             for pair, count in _word_pairs(chars).items():
@@ -190,12 +201,16 @@ def train_bpe_incremental(
             splits[token] = (new_chars, freq)
 
             for pair, count in _word_pairs(new_chars).items():
-                # add (b, cd): { "bcd" } and (cd, e): { "cde" }
                 pair_freqs[pair] = pair_freqs.get(pair, 0) + count * freq
                 pair_to_words.setdefault(pair, set()).add(token)
 
         merges.append(best_pair)
         vocab.append(new_token)
+        if pbar is not None:
+            pbar.update(1)
+
+    if pbar is not None:
+        pbar.close()
     return vocab, merges
 
 
