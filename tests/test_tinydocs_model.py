@@ -185,6 +185,100 @@ def test_attention_kv_cache_matches_prefill() -> None:
 
 
 # ------------------------------------------------------------------
+# Attention SDPA path (v3.1 §4)
+# ------------------------------------------------------------------
+
+
+def _equivalence_config() -> TinyDocsConfig:
+    """Small architecture for SDPA / manual equivalence tests."""
+    return TinyDocsConfig(
+        vocab_size=64,
+        hidden_dim=64,
+        n_layers=2,
+        n_heads=4,
+        head_dim=16,
+        max_seq_len=32,
+    )
+
+
+def test_sdpa_prefill_matches_manual() -> None:
+    """SDPA prefill (cache=None, is_causal=True) must equal hand-written attention."""
+    cfg_manual = _equivalence_config()  # attention_impl="manual" default
+    cfg_sdpa = TinyDocsConfig(**{**cfg_manual.__dict__, "attention_impl": "sdpa"})
+
+    torch.manual_seed(0)
+    rope = RotaryEmbedding(
+        head_dim=cfg_manual.head_dim, max_seq_len=cfg_manual.max_seq_len
+    )
+
+    attn_manual = Attention(cfg_manual)
+    attn_sdpa = Attention(cfg_sdpa)
+    # Sync weights — only difference should be the forward path
+    attn_sdpa.load_state_dict(attn_manual.state_dict())
+
+    x = torch.randn(2, 16, cfg_manual.hidden_dim)
+    out_manual, cache_manual = attn_manual(x, rope, cache=None, position=0)
+    out_sdpa, cache_sdpa = attn_sdpa(x, rope, cache=None, position=0)
+
+    assert torch.allclose(out_manual, out_sdpa, atol=1e-5), (
+        "SDPA prefill diverges from manual"
+    )
+    assert torch.allclose(cache_manual.keys, cache_sdpa.keys)
+    assert torch.allclose(cache_manual.values, cache_sdpa.values)
+
+
+def test_sdpa_decode_matches_manual() -> None:
+    """SDPA decode (cache provided, T=1) must equal hand-written attention.
+
+    Tests the explicit attn_mask path (vs prefill's is_causal=True).
+    """
+    cfg_manual = _equivalence_config()
+    cfg_sdpa = TinyDocsConfig(**{**cfg_manual.__dict__, "attention_impl": "sdpa"})
+
+    torch.manual_seed(0)
+    rope = RotaryEmbedding(
+        head_dim=cfg_manual.head_dim, max_seq_len=cfg_manual.max_seq_len
+    )
+
+    attn_manual = Attention(cfg_manual)
+    attn_sdpa = Attention(cfg_sdpa)
+    attn_sdpa.load_state_dict(attn_manual.state_dict())
+
+    # Prefill 8 tokens to build a cache.
+    x_prefill = torch.randn(1, 8, cfg_manual.hidden_dim)
+    _, cache_manual = attn_manual(x_prefill, rope, cache=None, position=0)
+    _, cache_sdpa = attn_sdpa(x_prefill, rope, cache=None, position=0)
+
+    # Decode one new token at position=8.
+    x_new = torch.randn(1, 1, cfg_manual.hidden_dim)
+    out_manual, _ = attn_manual(x_new, rope, cache=cache_manual, position=8)
+    out_sdpa, _ = attn_sdpa(x_new, rope, cache=cache_sdpa, position=8)
+
+    assert torch.allclose(out_manual, out_sdpa, atol=1e-5), (
+        "SDPA decode diverges from manual"
+    )
+
+
+def test_sdpa_full_model_forward_matches_manual() -> None:
+    """End-to-end model forward under both impls must produce equal logits."""
+    cfg_manual = _equivalence_config()
+    cfg_sdpa = TinyDocsConfig(**{**cfg_manual.__dict__, "attention_impl": "sdpa"})
+
+    torch.manual_seed(42)
+    model_manual = TinyDocsModel(cfg_manual)
+    model_sdpa = TinyDocsModel(cfg_sdpa)
+    model_sdpa.load_state_dict(model_manual.state_dict())
+
+    input_ids = torch.randint(0, cfg_manual.vocab_size, (2, 12))
+    logits_manual, _ = model_manual(input_ids)
+    logits_sdpa, _ = model_sdpa(input_ids)
+
+    assert torch.allclose(logits_manual, logits_sdpa, atol=1e-4), (
+        "Full-model SDPA forward diverges from manual"
+    )
+
+
+# ------------------------------------------------------------------
 # SwiGLUFFN
 # ------------------------------------------------------------------
 

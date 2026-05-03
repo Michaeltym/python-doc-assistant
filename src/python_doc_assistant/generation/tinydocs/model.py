@@ -86,7 +86,19 @@ class RotaryEmbedding(nn.Module):
 
 
 class Attention(nn.Module):
-    """Multi-head causal self-attention with optional KV cache."""
+    """Multi-head causal self-attention with optional KV cache.
+
+    Two attention implementations gated by `config.attention_impl`:
+      - "manual": hand-written `q @ k.T / sqrt(d) → softmax → @ v` (default,
+        matches v3 §1–§8 narrative).
+      - "sdpa":   `nn.functional.scaled_dot_product_attention`. Prefill uses
+        `is_causal=True` (Metal Flash Attention path on MPS); decode uses an
+        explicit `attn_mask` derived from `~causal_mask[position:..., :T_kv]`
+        (SDPA convention is `True = attend`).
+
+    Numerically equivalent to within fp32 rounding; ~17 % MPS speedup
+    measured on the v3.1 probe.
+    """
 
     causal_mask: Tensor
 
@@ -100,6 +112,7 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.n_heads = config.n_heads
         self.head_dim = config.head_dim
+        self.attention_impl = config.attention_impl
         mask = torch.triu(torch.ones(max_seq_len, max_seq_len), diagonal=1).bool()
         self.register_buffer("causal_mask", mask)
 
@@ -126,14 +139,45 @@ class Attention(nn.Module):
             full_k = torch.cat([cache.keys, k_new], dim=-2)
             full_v = torch.cat([cache.values, v_new], dim=-2)
 
+        if self.attention_impl == "sdpa":
+            attended = self._sdpa_attention(q, full_k, full_v, T, position)
+        else:
+            attended = self._manual_attention(q, full_k, full_v, T, position)
+        attended = attended.transpose(1, 2).reshape(B, T, self.head_dim * self.n_heads)
+        return self.o_proj(attended), KVCache(keys=full_k, values=full_v)
+
+    def _manual_attention(
+        self, q: Tensor, full_k: Tensor, full_v: Tensor, T: int, position: int
+    ) -> Tensor:
+        """Hand-written attention (v3 §1 baseline): scores → masked softmax → values."""
         T_kv = full_k.shape[-2]
         mask_slice = self.causal_mask[position : position + T, :T_kv]
         scores = q @ full_k.transpose(-2, -1) / math.sqrt(self.head_dim)
         scores = scores.masked_fill(mask_slice, float("-inf"))
         weights = torch.softmax(scores, dim=-1)
-        attended = weights @ full_v
-        attended = attended.transpose(1, 2).reshape(B, T, self.head_dim * self.n_heads)
-        return self.o_proj(attended), KVCache(keys=full_k, values=full_v)
+        return weights @ full_v
+
+    def _sdpa_attention(
+        self, q: Tensor, full_k: Tensor, full_v: Tensor, T: int, position: int
+    ) -> Tensor:
+        """SDPA path (v3.1 §4) — routes prefill through Metal Flash on MPS.
+
+        Required behaviour (caller passes q/k/v already shaped [B, H, T*, D]):
+          - Prefill (cache was None upstream → T == T_kv == prefill length):
+            call `nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True)`.
+            `is_causal=True` lets PyTorch pick the fastest backend on MPS.
+          - Decode (cache provided upstream → T_kv > T): build an explicit
+            `attn_mask` from `~self.causal_mask[position:position+T, :T_kv]`
+            (SDPA convention: True = attend, opposite of our stored mask)
+            and call `scaled_dot_product_attention(q, k, v, attn_mask=mask)`.
+
+        Returns the same `(B, n_heads, T, head_dim)` tensor as `_manual_attention`.
+        """
+        T_kv = full_k.shape[-2]
+        if T == T_kv:
+            return nn.functional.scaled_dot_product_attention(q, full_k, full_v, is_causal=True)
+        attn_mask = ~self.causal_mask[position : position + T, :T_kv]
+        return nn.functional.scaled_dot_product_attention(q, full_k, full_v, attn_mask=attn_mask)
 
     def _reshape(self, t: Tensor) -> Tensor:
         return t.reshape(*t.shape[:-1], self.n_heads, self.head_dim).transpose(1, 2)
