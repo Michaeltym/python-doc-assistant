@@ -24,6 +24,7 @@ class TinyDocsTokenizer:
         self.vocab = vocab
         self.token_to_id = {token: i for i, token in enumerate(vocab)}
         self.merges = merges
+        self.merge_priority = {pair: i for i, pair in enumerate(merges)}
         self.special_tokens = special_tokens
         self._pad_id = self.token_to_id["<pad>"]
         self._bos_id = self.token_to_id["<bos>"]
@@ -111,8 +112,13 @@ class TinyDocsTokenizer:
         if token in self._encode_cache:
             return self._encode_cache[token]
         chars = list(token)
-        for pair in self.merges:
-            chars = merge_pair(chars, pair)
+        sentinel = len(self.merge_priority) + 1
+        while len(chars) > 1:
+            pairs = [(chars[i], chars[i + 1]) for i in range(len(chars) - 1)]
+            best_pair = min(pairs, key=lambda p: self.merge_priority.get(p, sentinel))
+            if self.merge_priority.get(best_pair, sentinel) >= sentinel:
+                break
+            chars = merge_pair(chars, best_pair)
         result = [self.token_to_id.get(c, self.unk_id) for c in chars]
         self._encode_cache[token] = result
         return result

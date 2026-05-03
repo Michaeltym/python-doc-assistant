@@ -145,6 +145,47 @@ def test_incremental_reaches_target_vocab_size() -> None:
 
 
 # ------------------------------------------------------------------
+# _encode_token unmergeable-pair correctness (regression for v3.1 §1.4 bug)
+# ------------------------------------------------------------------
+
+
+def test_encode_unmergeable_chars_stay_separate() -> None:
+    """Word containing a pair never seen during BPE training must encode
+    as individual base-char tokens, not merge into an unknown super-token.
+
+    Regression: the priority-based optimized _encode_token used
+    `min(pairs, key=...)` which always returned a pair (even when no
+    applicable merge existed), forcing an incorrect merge into unk_id.
+    """
+    # Train on 'aaaa bbbb' only — learns (a,a), (b,b), (aa,aa), (bb,bb).
+    # Never learns (a,b), so encoding "ab" must NOT merge a+b.
+    corpus = ["aaaa bbbb"] * 100
+    vocab, merges = train_bpe(corpus, vocab_size=12, special_tokens=SPECIAL_TOKENS)
+    tok = TinyDocsTokenizer(vocab=vocab, merges=merges, special_tokens=SPECIAL_TOKENS)
+
+    a_id = tok.token_to_id["a"]
+    b_id = tok.token_to_id["b"]
+    assert tok.encode("ab") == [a_id, b_id], (
+        "unmergeable chars must split into individual base-char tokens"
+    )
+
+
+def test_encode_truly_unknown_char_returns_unk() -> None:
+    """Char never seen in training (not in vocab) → unk_id.
+
+    Boundary check: distinguish between
+      - "char in vocab but pair not learned" (use the char's real id)
+      - "char not in vocab at all" (use unk_id)
+    """
+    corpus = ["aaaa bbbb"] * 100   # only base chars: a, b
+    vocab, merges = train_bpe(corpus, vocab_size=12, special_tokens=SPECIAL_TOKENS)
+    tok = TinyDocsTokenizer(vocab=vocab, merges=merges, special_tokens=SPECIAL_TOKENS)
+
+    # 'z' never appeared → unk
+    assert tok.encode("z") == [tok.unk_id]
+
+
+# ------------------------------------------------------------------
 # encode_batch_parallel (v3.1 §1.3)
 # ------------------------------------------------------------------
 
