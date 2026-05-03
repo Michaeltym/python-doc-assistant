@@ -83,6 +83,96 @@ def test_build_segments_drops_partial_tail(tmp_path: Path) -> None:
 
 
 # ------------------------------------------------------------------
+# build_segments — n_workers (v3.1 §1.3 wiring)
+# ------------------------------------------------------------------
+
+
+def test_build_segments_n_workers_default_matches_pre_v31(tmp_path: Path) -> None:
+    """Default n_workers (no kwarg) must keep the v3 §4a sequential behaviour."""
+    tok = _tiny_tokenizer()
+    corpus = _write_corpus(tmp_path, ["the quick brown fox jumps over the lazy dog"] * 30)
+
+    segments = build_segments(corpus, tok, seq_len=16)
+
+    # Sanity: produces at least one segment with the right shape (existing
+    # behaviour). The point of this test is just to assert there's no
+    # regression when callers don't pass n_workers.
+    assert segments.dim() == 2
+    assert segments.shape[1] == 17
+    assert segments.shape[0] >= 1
+
+
+def test_build_segments_n_workers_parallel_matches_sequential(tmp_path: Path) -> None:
+    """n_workers=2 must produce the same tensor (byte-identical) as n_workers=1.
+
+    The encode_batch_parallel path under the hood must preserve order;
+    if it shuffles batches, segments diverge. This test catches that.
+    """
+    tok = _tiny_tokenizer()
+    # Need enough docs to exercise the parallel batching path. With ~30 docs
+    # and chunksize default the Pool sees real work, but stays fast in CI.
+    corpus = _write_corpus(
+        tmp_path,
+        [
+            "the quick brown fox jumps over the lazy dog",
+            "pack my box with five dozen liquor jugs",
+            "how vexingly quick daft zebras jump",
+        ]
+        * 10,
+    )
+
+    seq_len = 16
+    seq_segments = build_segments(corpus, tok, seq_len=seq_len, n_workers=1)
+    par_segments = build_segments(corpus, tok, seq_len=seq_len, n_workers=2)
+
+    assert torch.equal(seq_segments, par_segments)
+
+
+def test_build_segments_n_workers_skips_blank_lines(tmp_path: Path) -> None:
+    """Blank / whitespace lines must still be filtered when running parallel."""
+    tok = _tiny_tokenizer()
+    corpus_path = tmp_path / "corpus.jsonl"
+    with corpus_path.open("w", encoding="utf-8") as f:
+        f.write(json.dumps({"text": "the quick brown fox"}) + "\n")
+        f.write("\n")  # blank line — must be skipped (matches sequential)
+        f.write("   \n")  # whitespace
+        f.write(json.dumps({"text": "jumps over the lazy dog"}) + "\n")
+
+    seq_segments = build_segments(corpus_path, tok, seq_len=8, n_workers=1)
+    par_segments = build_segments(corpus_path, tok, seq_len=8, n_workers=2)
+
+    assert torch.equal(seq_segments, par_segments)
+
+
+def test_build_segments_n_workers_propagates_bos_eos(tmp_path: Path) -> None:
+    """Parallel path must still emit <bos>/<eos> markers between docs."""
+    tok = _tiny_tokenizer()
+    corpus = _write_corpus(tmp_path, ["the dog", "the fox"] * 20)
+
+    par_segments = build_segments(corpus, tok, seq_len=16, n_workers=2)
+    flat = par_segments.flatten().tolist()
+    # eos must appear at doc boundaries — same invariant as sequential
+    assert tok.eos_id in flat
+    assert tok.bos_id in flat
+
+
+def test_build_segments_n_workers_invalid_or_one_uses_sequential_path(
+    tmp_path: Path,
+) -> None:
+    """n_workers <= 1 must still produce correct output (sequential fallback)."""
+    tok = _tiny_tokenizer()
+    corpus = _write_corpus(tmp_path, ["the quick brown fox"] * 5)
+
+    out_default = build_segments(corpus, tok, seq_len=8)
+    out_one = build_segments(corpus, tok, seq_len=8, n_workers=1)
+    out_zero = build_segments(corpus, tok, seq_len=8, n_workers=0)
+
+    # All three should be byte-identical (default == 1, 0 falls through to fallback).
+    assert torch.equal(out_default, out_one)
+    assert torch.equal(out_zero, out_one)
+
+
+# ------------------------------------------------------------------
 # TinyDocsDataset
 # ------------------------------------------------------------------
 

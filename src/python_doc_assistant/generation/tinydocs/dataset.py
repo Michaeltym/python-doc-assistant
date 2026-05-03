@@ -23,6 +23,7 @@ def build_segments(
     *,
     seq_len: int,
     show_progress: bool = False,
+    n_workers: int = 1,
 ) -> Tensor:
     """Read corpus.jsonl, encode every text, concatenate (with BOS/EOS markers
     between docs), and split into segments of length `seq_len + 1`.
@@ -45,17 +46,20 @@ def build_segments(
         iterator = tqdm(iterator, total=len(lines), desc="encoding corpus", unit="line")
 
     token_ids: list[int] = []
+    texts: list[str] = []
     for i, line in iterator:
         stripped_line = line.strip()
         if not stripped_line:
             continue
         try:
             data = json.loads(stripped_line)
-            text = data["text"]
-            ids = tokenizer.encode(text, add_bos=True, add_eos=True)
-            token_ids.extend(ids)
+            texts.append(data["text"])
         except json.JSONDecodeError as e:
             raise ValueError(f"Line {i}: invalid json object") from e
+    for ids in tokenizer.encode_batch_parallel(
+        texts, add_bos=True, add_eos=True, n_workers=n_workers
+    ):
+        token_ids.extend(ids)
 
     n_segments = len(token_ids) // (seq_len + 1)
     return torch.tensor(token_ids[: n_segments * (seq_len + 1)], dtype=torch.long).reshape(

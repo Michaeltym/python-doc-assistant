@@ -9,7 +9,8 @@ Usage:
         --corpus data/pretrain/corpus.jsonl \\
         --tokenizer data/tokenizer/tokenizer.json \\
         --seq-len 2048 \\
-        --out data/pretrain/segments.pt
+        --out data/pretrain/segments.pt \\
+        --num-workers 4
 """
 
 from __future__ import annotations
@@ -44,7 +45,13 @@ from python_doc_assistant.generation.tinydocs.tokenizer import TinyDocsTokenizer
     type=click.Path(),
     help="Output segments.pt path (dict with segments + metadata).",
 )
-def main(corpus: str, tokenizer: str, seq_len: int, out: str) -> None:
+@click.option(
+    "--num-workers",
+    default=4,
+    type=int,
+    help="Parallelize encoding across N workers (M1 perf cores: 4). 1 = sequential.",
+)
+def main(corpus: str, tokenizer: str, seq_len: int, out: str, num_workers: int) -> None:
     """Encode a corpus to pre-tokenized segments.pt."""
     corpus_path = Path(corpus)
     tokenizer_path = Path(tokenizer)
@@ -54,7 +61,9 @@ def main(corpus: str, tokenizer: str, seq_len: int, out: str) -> None:
     tok = TinyDocsTokenizer.load(tokenizer_path)
 
     click.echo(f"encoding corpus: {corpus_path} (this is the slow step)")
-    segments = build_segments(corpus_path, tok, seq_len=seq_len, show_progress=True)
+    segments = build_segments(
+        corpus_path, tok, seq_len=seq_len, show_progress=True, n_workers=num_workers
+    )
 
     payload = {
         "segments": segments,
