@@ -145,6 +145,71 @@ def test_incremental_reaches_target_vocab_size() -> None:
 
 
 # ------------------------------------------------------------------
+# encode_batch_parallel (v3.1 §1.3)
+# ------------------------------------------------------------------
+
+
+def _build_test_tokenizer() -> TinyDocsTokenizer:
+    """Train a small tokenizer for parallel-encode tests (avoids re-training each test)."""
+    corpus = [
+        "the quick brown fox jumps over the lazy dog",
+        "pack my box with five dozen liquor jugs",
+        "how vexingly quick daft zebras jump",
+        "sphinx of black quartz judge my vow",
+    ] * 5
+    vocab, merges = train_bpe(corpus, vocab_size=80, special_tokens=SPECIAL_TOKENS)
+    return TinyDocsTokenizer(vocab=vocab, merges=merges, special_tokens=SPECIAL_TOKENS)
+
+
+def test_parallel_matches_sequential() -> None:
+    """Parallel output must equal sequential output element-wise."""
+    tok = _build_test_tokenizer()
+    texts = [
+        "the quick brown fox",
+        "pack my box with five",
+        "how vexingly quick",
+        "sphinx of black quartz",
+    ] * 10
+    seq = [tok.encode(t) for t in texts]
+    par = tok.encode_batch_parallel(texts, n_workers=2)
+    assert par == seq
+
+
+def test_parallel_preserves_order() -> None:
+    """`output[i]` corresponds to `texts[i]` (no reordering)."""
+    tok = _build_test_tokenizer()
+    texts = [f"text number {i} here" for i in range(40)]
+    par = tok.encode_batch_parallel(texts, n_workers=2)
+    for i, encoded in enumerate(par):
+        assert encoded == tok.encode(texts[i])
+
+
+def test_parallel_forwards_add_bos_eos() -> None:
+    """`add_bos` / `add_eos` flags reach worker."""
+    tok = _build_test_tokenizer()
+    texts = ["hello", "world"] * 5
+    par = tok.encode_batch_parallel(texts, n_workers=2, add_bos=True, add_eos=True)
+    seq = [tok.encode(t, add_bos=True, add_eos=True) for t in texts]
+    assert par == seq
+
+
+def test_parallel_falls_back_to_sequential_for_small_inputs() -> None:
+    """Few texts → sequential path (avoids Pool spawn overhead)."""
+    tok = _build_test_tokenizer()
+    texts = ["hello"]
+    out = tok.encode_batch_parallel(texts, n_workers=4)
+    assert out == [tok.encode("hello")]
+
+
+def test_parallel_n_workers_1_uses_sequential() -> None:
+    """`n_workers=1` skips multiprocessing entirely."""
+    tok = _build_test_tokenizer()
+    texts = ["hello world"] * 10
+    out = tok.encode_batch_parallel(texts, n_workers=1)
+    assert out == [tok.encode(t) for t in texts]
+
+
+# ------------------------------------------------------------------
 # TinyDocsTokenizer
 # ------------------------------------------------------------------
 

@@ -116,3 +116,67 @@ class TinyDocsTokenizer:
         result = [self.token_to_id.get(c, self.unk_id) for c in chars]
         self._encode_cache[token] = result
         return result
+
+    def encode_batch_parallel(
+        self,
+        texts: list[str],
+        *,
+        n_workers: int = 4,
+        add_bos: bool = False,
+        add_eos: bool = False,
+        chunksize: int = 100,
+    ) -> list[list[int]]:
+        """Encode `texts` across `n_workers` processes via multiprocessing.Pool.
+
+        Used by v3.1 §1.3 to speed up encoding the 2.4 GB FineWeb mix corpus
+        from ~3 h single-thread to ~1 h on M1's 4 performance cores.
+
+        Each worker:
+          - Receives a pickled snapshot of the tokenizer (vocab + merges)
+          - Maintains its own per-word `_encode_cache` (no cross-process sharing)
+          - Encodes its assigned chunk of texts via the same `encode()` path
+
+        Order is preserved: `output[i] == self.encode(texts[i], add_bos=...)`.
+
+        For small inputs (or n_workers <= 1) falls back to sequential
+        encoding to avoid `Pool` startup overhead (~1 s per worker on
+        macOS spawn).
+
+        Args:
+            texts: list of input strings to encode.
+            n_workers: number of worker processes. <= 1 → sequential fallback.
+            add_bos: forwarded to `encode()`.
+            add_eos: forwarded to `encode()`.
+            chunksize: per-worker batch size for `Pool.map`. Larger values
+                amortize IPC overhead but worsen load balancing on
+                heterogeneous text lengths. 100 is a good default for ~3 KB
+                lines (FineWeb scale).
+
+        Returns:
+            list[list[int]] — same length and order as `texts`.
+        """
+        if n_workers <= 1 or len(texts) < n_workers * chunksize:
+            return [self.encode(text, add_bos=add_bos, add_eos=add_eos) for text in texts]
+        from functools import partial
+        from multiprocessing import Pool
+
+        fn = partial(_worker_encode, tokenizer=self, add_bos=add_bos, add_eos=add_eos)
+        with Pool(n_workers) as pool:
+            results = pool.map(fn, texts, chunksize=chunksize)
+        return results
+
+
+def _worker_encode(
+    text: str,
+    *,
+    tokenizer: TinyDocsTokenizer,
+    add_bos: bool,
+    add_eos: bool,
+) -> list[int]:
+    """Module-level helper for `multiprocessing.Pool.map` (must be picklable).
+
+    Bound methods can't be sent to workers directly on macOS `spawn` start
+    method; this thin wrapper sidesteps the issue. Callers pass the
+    tokenizer instance via `functools.partial(_worker_encode, tokenizer=...)`.
+    """
+    return tokenizer.encode(text, add_bos=add_bos, add_eos=add_eos)
