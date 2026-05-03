@@ -21,7 +21,7 @@ generation = ["transformers", "torch", "accelerate"]
 embedding = ["sentence-transformers", "numpy"]
 rerank = ["sentence-transformers"]
 judge = ["anthropic"]
-tinydocs = ["torch", "tokenizers"]
+tinydocs = ["torch", "tokenizers", "datasets"]
 
 [project.scripts]
 python-doc-assistant = "python_doc_assistant.cli:main"
@@ -60,6 +60,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tqdm.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "datasets.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]                                                                                    

@@ -4,18 +4,23 @@ Usage:
     uv run python scripts/train_tokenizer.py \\
         --corpus data/pretrain/corpus.jsonl \\
         --vocab-size 32000 \\
-        --out data/tokenizer/tokenizer.json
+        --out data/tokenizer/tokenizer.json \\
+        --incremental
 """
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import click
 
 from python_doc_assistant.generation.tinydocs.tokenizer import TinyDocsTokenizer
-from python_doc_assistant.generation.tinydocs.tokenizer_train import train_bpe
+from python_doc_assistant.generation.tinydocs.tokenizer_train import (
+    train_bpe,
+    train_bpe_incremental,
+)
 
 
 @click.command()
@@ -27,7 +32,12 @@ from python_doc_assistant.generation.tinydocs.tokenizer_train import train_bpe
 )
 @click.option("--vocab-size", required=True, type=int, help="Target vocabulary size.")
 @click.option("--out", required=True, type=click.Path(), help="Output tokenizer.json path.")
-def main(corpus: str, vocab_size: int, out: str) -> None:
+@click.option(
+    "--incremental",
+    is_flag=True,
+    help="Use incremental BPE training (10–30× faster on large corpora; v3.1 §1.2).",
+)
+def main(corpus: str, vocab_size: int, out: str, incremental: bool) -> None:
     """Train a BPE tokenizer from a pretrain corpus."""
     corpus_path = Path(corpus)
     texts: list[str] = []
@@ -38,8 +48,19 @@ def main(corpus: str, vocab_size: int, out: str) -> None:
                 continue
             data = json.loads(line)
             texts.append(data["text"])
+    click.echo(f"loaded {len(texts)} texts from {corpus_path}")
+
     special_tokens = ("<pad>", "<bos>", "<eos>", "<unk>", "<sp>")
-    vocab, merges = train_bpe(texts, vocab_size=vocab_size, special_tokens=special_tokens)
+    train_fn = train_bpe_incremental if incremental else train_bpe
+    click.echo(
+        f"training BPE (vocab_size={vocab_size}, "
+        f"algo={'incremental' if incremental else 'naive'})..."
+    )
+    t0 = time.time()
+    vocab, merges = train_fn(texts, vocab_size=vocab_size, special_tokens=special_tokens)
+    elapsed = time.time() - t0
+    click.echo(f"  done in {elapsed:.1f}s")
+
     tokenizer = TinyDocsTokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
     tokenizer.save(Path(out))
     click.echo(f"tokenizer written to {out}")
