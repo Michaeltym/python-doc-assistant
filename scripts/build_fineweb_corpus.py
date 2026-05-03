@@ -43,39 +43,81 @@ def _stream_fineweb_to_byte_target(
     target_bytes: int,
     sample_name: str,
 ) -> tuple[int, int, str | None]:
-    """Stream FineWeb-Edu rows; return (bytes_written, rows_written, dataset_revision)."""
-    from datasets import load_dataset
+    """Stream FineWeb-Edu rows; return (bytes_written, rows_written, revision).
+
+    Implementation note: uses `huggingface_hub.hf_hub_download` to fetch each
+    parquet file to the local HF cache, then pyarrow's row-batch iterator to
+    stream rows without loading the whole table into RAM.
+
+    The earlier `datasets.load_dataset(..., streaming=True)` code path failed
+    on this machine with "Cannot send a request, as the client has been
+    closed." inside fsspec/httpx — a known compatibility issue. This direct
+    download path uses `huggingface_hub`'s requests-based client and works
+    reliably.
+    """
+    import pyarrow.parquet as pq
+    from huggingface_hub import HfApi, hf_hub_download
+
+    repo_id = "HuggingFaceFW/fineweb-edu"
+    # sample-10BT → sample/10BT (dataset config name → file prefix)
+    if sample_name.startswith("sample-"):
+        file_prefix = "sample/" + sample_name.removeprefix("sample-") + "/"
+    else:
+        file_prefix = sample_name + "/"
 
     click.echo(
-        f"streaming HuggingFaceFW/fineweb-edu (subset={sample_name}, "
-        f"target={target_bytes / 1e9:.2f} GB)..."
+        f"resolving HuggingFaceFW/fineweb-edu parquet files (subset={sample_name})..."
     )
-    ds = load_dataset(
-        "HuggingFaceFW/fineweb-edu",
-        name=sample_name,
-        split="train",
-        streaming=True,
+    api = HfApi()
+    all_files = api.list_repo_files(repo_id, repo_type="dataset")
+    parquet_files = sorted(
+        f for f in all_files if f.startswith(file_prefix) and f.endswith(".parquet")
     )
-    revision = getattr(ds.info, "version", None) or getattr(ds, "_revision", None)
+    if not parquet_files:
+        raise click.UsageError(
+            f"no parquet files found under {file_prefix} in {repo_id}"
+        )
+    click.echo(f"  found {len(parquet_files)} parquet files; will read in order")
+
+    revision: str | None = None
     written = 0
     rows = 0
-    for item in ds:
-        text = item.get("text", "")
-        if not text or not text.strip():
-            continue
-        record = json.dumps({"text": text}, ensure_ascii=False) + "\n"
-        out_handle.write(record)
-        written += len(record.encode("utf-8"))
-        rows += 1
-        if rows % 1000 == 0:
-            pct = 100 * written / target_bytes
-            click.echo(
-                f"  fineweb rows={rows:>7}  written={written / 1e6:>6.1f} MB ({pct:5.1f} %)"
-            )
+    for fname in parquet_files:
         if written >= target_bytes:
             break
+        click.echo(f"  downloading {fname} (cached after first time)...")
+        local_path = hf_hub_download(repo_id=repo_id, filename=fname, repo_type="dataset")
+        # Capture revision (parent of snapshots/<rev>/)
+        if revision is None:
+            parts = Path(local_path).resolve().parts
+            if "snapshots" in parts:
+                idx = parts.index("snapshots")
+                if idx + 1 < len(parts):
+                    revision = parts[idx + 1]
+
+        click.echo(f"  streaming rows from {fname}...")
+        pf = pq.ParquetFile(local_path)
+        for batch in pf.iter_batches(batch_size=1000, columns=["text"]):
+            for text_scalar in batch.column("text"):
+                text = text_scalar.as_py()
+                if not text or not text.strip():
+                    continue
+                record = json.dumps({"text": text}, ensure_ascii=False) + "\n"
+                out_handle.write(record)
+                written += len(record.encode("utf-8"))
+                rows += 1
+                if rows % 1000 == 0:
+                    pct = 100 * written / target_bytes
+                    click.echo(
+                        f"  fineweb rows={rows:>7}  written={written / 1e6:>6.1f} MB "
+                        f"({pct:5.1f} %)"
+                    )
+                if written >= target_bytes:
+                    break
+            if written >= target_bytes:
+                break
     click.echo(f"  done. fineweb rows={rows}, bytes={written / 1e6:.1f} MB")
-    return written, rows, str(revision) if revision else None
+    return written, rows, revision
 
 
 def _append_docs_tiled(
