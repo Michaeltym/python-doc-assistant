@@ -57,10 +57,23 @@ from python_doc_assistant.generation.tinydocs.train import (
 @click.option("--checkpoint-every", default=200, type=int, help="Save ckpt every N steps.")
 @click.option("--log-every", default=10, type=int, help="Log every N steps.")
 @click.option(
+    "--milestone-every",
+    default=1000,
+    type=int,
+    help="Print a milestone block (rolling loss + ETA + finish-clock) every N steps.",
+)
+@click.option(
     "--device",
     default="mps",
     type=click.Choice(["mps", "cuda", "cpu"]),
     help="Torch device for training.",
+)
+@click.option(
+    "--attention-impl",
+    default="manual",
+    type=click.Choice(["manual", "sdpa"]),
+    help="Attention forward path. 'sdpa' uses scaled_dot_product_attention "
+    "for ~17 % MPS speedup (v3.1 §4).",
 )
 @click.option("--seed", default=42, type=int, help="Random seed.")
 def main(
@@ -73,7 +86,9 @@ def main(
     batch_size: int,
     checkpoint_every: int,
     log_every: int,
+    milestone_every: int,
     device: str,
+    attention_impl: str,
     seed: int,
 ) -> None:
     """Pretrain TinyDocs on a pre-encoded segments tensor."""
@@ -90,6 +105,7 @@ def main(
     model_config = TinyDocsConfig(
         vocab_size=vocab_size,
         max_seq_len=seq_len,
+        attention_impl=attention_impl,  # type: ignore[arg-type]
     )
     dataset = TinyDocsDataset(segments_tensor)
 
@@ -100,6 +116,7 @@ def main(
         batch_size=batch_size,
         checkpoint_every=checkpoint_every,
         log_every=log_every,
+        milestone_every=milestone_every,
         device=device,
         seed=seed,
     )
