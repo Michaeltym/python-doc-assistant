@@ -57,7 +57,11 @@ def build_segments(
         except json.JSONDecodeError as e:
             raise ValueError(f"Line {i}: invalid json object") from e
     for ids in tokenizer.encode_batch_parallel(
-        texts, add_bos=True, add_eos=True, n_workers=n_workers
+        texts,
+        add_bos=True,
+        add_eos=True,
+        n_workers=n_workers,
+        show_progress=show_progress,
     ):
         token_ids.extend(ids)
 

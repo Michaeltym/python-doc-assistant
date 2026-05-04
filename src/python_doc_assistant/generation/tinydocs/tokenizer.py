@@ -131,11 +131,12 @@ class TinyDocsTokenizer:
         add_bos: bool = False,
         add_eos: bool = False,
         chunksize: int = 100,
+        show_progress: bool = False,
     ) -> list[list[int]]:
         """Encode `texts` across `n_workers` processes via multiprocessing.Pool.
 
         Used by v3.1 §1.3 to speed up encoding the 2.4 GB FineWeb mix corpus
-        from ~3 h single-thread to ~1 h on M1's 4 performance cores.
+        across M1's 4 performance cores.
 
         Each worker:
           - Receives a pickled snapshot of the tokenizer (vocab + merges)
@@ -143,6 +144,10 @@ class TinyDocsTokenizer:
           - Encodes its assigned chunk of texts via the same `encode()` path
 
         Order is preserved: `output[i] == self.encode(texts[i], add_bos=...)`.
+        Uses `Pool.imap` (lazy, ordered) so a tqdm bar can show real-time
+        progress when `show_progress=True`. The earlier `Pool.map` path
+        appeared frozen for hours on a 2.4 GB corpus because it returned
+        nothing until every worker finished.
 
         For small inputs (or n_workers <= 1) falls back to sequential
         encoding to avoid `Pool` startup overhead (~1 s per worker on
@@ -153,10 +158,11 @@ class TinyDocsTokenizer:
             n_workers: number of worker processes. <= 1 → sequential fallback.
             add_bos: forwarded to `encode()`.
             add_eos: forwarded to `encode()`.
-            chunksize: per-worker batch size for `Pool.map`. Larger values
+            chunksize: per-worker batch size for `Pool.imap`. Larger values
                 amortize IPC overhead but worsen load balancing on
                 heterogeneous text lengths. 100 is a good default for ~3 KB
                 lines (FineWeb scale).
+            show_progress: wrap the imap iterator with tqdm.
 
         Returns:
             list[list[int]] — same length and order as `texts`.
@@ -168,8 +174,12 @@ class TinyDocsTokenizer:
 
         fn = partial(_worker_encode, tokenizer=self, add_bos=add_bos, add_eos=add_eos)
         with Pool(n_workers) as pool:
-            results = pool.map(fn, texts, chunksize=chunksize)
-        return results
+            it = pool.imap(fn, texts, chunksize=chunksize)
+            if show_progress:
+                from tqdm import tqdm
+
+                it = tqdm(it, total=len(texts), desc="encoding", unit="text")
+            return list(it)
 
 
 def _worker_encode(
