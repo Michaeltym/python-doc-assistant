@@ -1,5 +1,85 @@
 # v4 — Production-Track Accuracy
 
+> **Revision 2026-05-05 — Qwen-only path** (current direction).
+>
+> The original plan below assumes a Claude (Anthropic API) generator
+> as the v4 production target. After v3.1 closure we re-scoped v4 as a
+> **local-only / no-API-spend track** for continued exploration. The
+> remainder of this document is preserved as the Claude-path reference;
+> read this revision block as the active spec.
+>
+> ## Direction change
+>
+> | Axis | Original (Claude) | Revised (Qwen-only) |
+> |---|---|---|
+> | Generator | Claude Sonnet/Haiku via Anthropic API | Qwen2.5-7B-Instruct (Q4_K_M GGUF, llama.cpp) |
+> | Cost | ~$30–50/week API | $0 (M1 local) |
+> | Time budget | 4–6 weeks | 3–4 weeks |
+> | Hardware | Any | M1 Pro 16 GB (target) — RAM-bound on 7B |
+> | Inference stack | `transformers` (1.5B baseline) → Anthropic SDK | `transformers` (1.5B baseline) → `llama-cpp-python` (7B Q4 GGUF) |
+>
+> ## Revised targets (vs 0.90 / 0.03 in original)
+>
+> | Metric | Revised target | Stretch | Rationale |
+> |---|---:|---:|---|
+> | `accuracy` | **≥ 0.78** | ≥ 0.85 | Qwen2.5-7B Q4 grounded RAG ceiling |
+> | `hallucination_rate` | **≤ 0.10** | ≤ 0.05 | 1.5B baseline 0.216 → 7B + verify ≈ 0.10 plausible |
+> | `refused_rate` | not a target | — | Qwen 1.5B baseline 0.018 — already non-issue |
+> | `latency_p50` | ≤ 5 s | ≤ 3 s | M1 7B Q4 ≈ 6–8 s/query baseline |
+>
+> ## Sub-task delta
+>
+> | # | Original | Revised |
+> |---|---|---|
+> | **1** Refusal calibration | P0, +5–7 pp | ❌ **deleted** — Qwen `refused_rate=0.018` already; over-refusal is Claude-specific |
+> | **2** Retrieval miss recovery | P1 | 🔼 **P0** — biggest accuracy lever once generator is fixed; 2a/2b/2c unchanged |
+> | **3** Claude API backend (`claude_backend.py`) | P1, 1 day | ❌ **deleted** — replaced by sub-task 3' |
+> | **3'** **(new)** Qwen 7B GGUF backend (`qwen_gguf_backend.py`) | — | 🔼 **P0**, ~0.5 day. `llama-cpp-python` adapter; reuse `Generator` ABC + `parse_response` |
+> | **4** Self-verification loop | P2, +3–5 pp | 🔼 **P0** — primary hallucination lever; sample subset to bound wall-clock under 7B inference cost |
+> | **5** Eval expansion + per-type + refusal F1 + triage | P1 | 🔁 keep, `refused_*` fields stay as monitoring (low-priority signal under Qwen) |
+> | **6** `pdr ask` interactive subcommand | P0 | 🔁 keep P0 — backend-agnostic |
+> | **7** Streaming + rich CLI | P2 | 🔁 keep P2 |
+> | **8** Agentic generator (Anthropic tool-use) | P3 conditional | ❌ **deleted** — depends on Claude tool-use API |
+> | **9** HTTP API + web UI | P3 | 🔁 keep optional — backend-agnostic |
+> | **10** MCP server | P3 | 🔁 keep optional |
+> | **1'** **(new, replaces 1)** Anti-hallucination prompt | — | P1, 0.5 day. Strengthen "must cite every fact / don't invent fields" + 2–3 in-prompt examples; prompt-only change |
+>
+> ## Revised roadmap
+>
+> | Week | Deliverable | Cumulative accuracy estimate |
+> |---|---|---:|
+> | **0** | Sub-task 3' Qwen 7B GGUF backend + baseline re-run on `eval_sets/v2_full.jsonl` | 0.685 (1.5B) → ~0.75–0.80 (7B Q4 swap, no other changes) |
+> | **1** | Sub-task 5d (failure triage) + sub-task 6 (`pdr ask`) | 0.75–0.80 (no eval delta yet) |
+> | **2** | Sub-task 2 (HyDE + comparison decomp + chunker re-cut) | 0.78–0.83 |
+> | **3** | Sub-task 4 (self-verify, sampled to control wall-clock) + sub-task 1' (anti-halluc prompt) + 5b/5c (per-type + refusal metrics) | 0.80–0.85 |
+> | **Optional 4+** | 7 (rich CLI) / 9 (HTTP+UI tier A) / 10 (MCP) | UI / integration milestone |
+>
+> ## New decision gates
+>
+> - **End of Week 0**: 7B baseline `accuracy < 0.72` → 7B is not pulling weight on grounded RAG. Either revisit retrieval first (move sub-task 2 ahead) or evaluate going back to 1.5B with sub-task 4 only.
+> - **End of Week 2**: post sub-task 2 `accuracy < 0.78` → retrieval lift smaller than estimated; sub-task 4 (verify) still on for Week 3 but stretch target may slip.
+> - **End of Week 3**: `accuracy ≥ 0.78` → revised target met, narrative work + optional UI tier next. `accuracy < 0.78` → narrative documents the partial achievement and proposes either Qwen 14B (RAM-bound on M1 16 GB) or a Claude path revival as v4.1.
+>
+> ## New risks
+>
+> - **R1' M1 RAM pressure** (replaces R1 API cost): 7B Q4 ≈ 5 GB model + ~2 GB context + system + browser + IDE. 16 GB is tight; close other heavy apps before eval runs. Mitigation: GGUF with `mmap=True` keeps RAM use to active layers only; fallback to Q3_K_S (smaller, slightly lower quality) if Q4 OOMs.
+> - **R2' Q4 quantization quality loss**: ~1–2 pp accuracy vs fp16 7B. Acceptable trade-off given the alternative is "cannot run". If accuracy bottlenecks here, document the gap rather than chasing fp16.
+> - **R3 Eval set size CIs**: unchanged from original.
+> - **R4 Corpus / chunker compatibility**: unchanged from original.
+>
+> ## What stays from the original
+>
+> - Quantitative `accuracy = (correct + partial) / n` definition (and the four-tier rubric)
+> - Eval set requirements (n ≥ 300 in-scope + 30 OOS, balanced query types)
+> - Reproducibility manifest contract
+> - Sub-tasks 2 / 4 / 5 / 6 / 7 / 9 / 10 mechanics (only the priority order shifted)
+>
+> ---
+>
+> **Below: original Claude-path plan, preserved as historical reference.**
+
+---
+
 **Parent:** [`../PLAN.md`](../PLAN.md) (v4 chapter to be added).
 
 **Prerequisites:** v2 complete, including the §9 cross-generator follow-up
