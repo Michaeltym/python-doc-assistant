@@ -194,15 +194,26 @@ def search(query: str, k: int, version: str | None, docs_sha: str | None, debug:
 @click.option("--k", "k", type=int, default=5, help="Top-k chunks to retrieve.")
 @click.option(
     "--backend",
-    type=click.Choice(["qwen", "tinydocs"]),
+    type=click.Choice(["qwen", "qwen-gguf", "tinydocs"]),
     default="qwen",
-    help="Generator backend. 'tinydocs' loads a self-trained checkpoint (v3 §6).",
+    help=(
+        "Generator backend. 'qwen' = HF transformers (v1). "
+        "'qwen-gguf' = llama.cpp + GGUF (v4 sub-task 3'). "
+        "'tinydocs' loads a self-trained checkpoint (v3 §6)."
+    ),
 )
 @click.option(
     "--model",
     "model_id",
     default="Qwen/Qwen2.5-1.5B-Instruct",
     help="HuggingFace model_id (qwen backend only).",
+)
+@click.option(
+    "--gguf-model",
+    "gguf_model_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to GGUF model file (required when --backend=qwen-gguf).",
 )
 @click.option(
     "--tinydocs-ckpt",
@@ -228,6 +239,7 @@ def ask(
     k: int,
     backend: str,
     model_id: str,
+    gguf_model_path: str | None,
     tinydocs_ckpt: str | None,
     tinydocs_tok: str | None,
     version: str | None,
@@ -320,6 +332,12 @@ def ask(
             checkpoint_path=Path(tinydocs_ckpt),
             tokenizer_path=Path(tinydocs_tok),
         )
+    elif backend == "qwen-gguf":
+        if gguf_model_path is None:
+            raise click.UsageError("--backend=qwen-gguf requires --gguf-model")
+        from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
+
+        generator = QwenGGUFGenerator(model_path=Path(gguf_model_path))
     else:
         from python_doc_assistant.generation.qwen_backend import QwenGenerator
 
@@ -665,6 +683,22 @@ def judge_cmd(
     ),
 )
 @click.option(
+    "--backend",
+    type=click.Choice(["qwen", "qwen-gguf"]),
+    default="qwen",
+    help=(
+        "Generation backend. 'qwen' = HF transformers (v1 default). "
+        "'qwen-gguf' = llama.cpp + GGUF (v4 sub-task 3')."
+    ),
+)
+@click.option(
+    "--gguf-model",
+    "gguf_model_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Path to GGUF model file (required when --backend=qwen-gguf).",
+)
+@click.option(
     "--overwrite",
     is_flag=True,
     help="Force overwrite if the run directory already exists.",
@@ -680,6 +714,8 @@ def eval_cmd(
     rerank: bool,
     rerank_candidates: int,
     model_id: str | None,
+    backend: str,
+    gguf_model_path: str | None,
     overwrite: bool,
 ) -> None:
     """Run eval set against persisted indexes; write results.json + per_query.jsonl.
@@ -741,12 +777,16 @@ def eval_cmd(
         rerank=rerank,
         rerank_candidates=rerank_candidates,
     )
+    if backend == "qwen-gguf" and gguf_model_path is None:
+        raise click.UsageError("--backend=qwen-gguf requires --gguf-model")
     run_result, model_field, decoding_params = _run_eval_with_optional_generation(
         eval_queries=eval_queries,
         retrieve_fn=retrieve_fn,
         chunks_by_id=chunks_by_id,
         max_k=k,
         model_id=model_id,
+        backend=backend,
+        gguf_model_path=gguf_model_path,
     )
 
     manifest = _load_ingest_manifest(docs_dir)
@@ -1002,29 +1042,48 @@ def _run_eval_with_optional_generation(
     chunks_by_id: dict[str, Chunk],
     max_k: int,
     model_id: str | None,
+    backend: str = "qwen",
+    gguf_model_path: str | None = None,
 ) -> tuple[EvalRunResult, str | None, dict[str, Any] | None]:
     """Dispatch retrieval-only vs retrieval+generation eval.
 
     Returns:
         (run_result, model_field, decoding_params)
 
-        - model_id is None → retrieval-only (v0 path); model + decoding
-          stay None.
-        - model_id is set → retrieval + generation (v1 §4); model returns
-          the id verbatim and decoding_params surfaces the generator's
-          decoding config so results.json is reproducible.
+        - retrieval-only (v0): selected when backend == "qwen" and
+          model_id is None. Model + decoding stay None.
+        - retrieval + qwen transformers (v1): backend == "qwen" and
+          model_id is set.
+        - retrieval + qwen GGUF (v4 sub-task 3'): backend == "qwen-gguf"
+          and gguf_model_path is set; model_field returns the GGUF
+          filename for reproducibility.
 
     Splitting this out keeps `eval_cmd` body small and lets tests cover
     the dispatch without spinning up a real model.
     """
-    if model_id is None:
+    if backend == "qwen" and model_id is None:
         run_result = evaluate(eval_queries, retrieve_fn, max_k=max_k)
         return run_result, None, None
 
     from python_doc_assistant.evaluation.generation_eval import evaluate_with_generation
-    from python_doc_assistant.generation.qwen_backend import QwenGenerator
+    from python_doc_assistant.generation.interface import Generator
 
-    generator = QwenGenerator(model_id)
+    generator: Generator
+    model_field: str
+    if backend == "qwen-gguf":
+        if gguf_model_path is None:
+            raise ValueError("backend='qwen-gguf' requires gguf_model_path")
+        from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
+
+        generator = QwenGGUFGenerator(model_path=Path(gguf_model_path))
+        model_field = Path(gguf_model_path).name
+    else:
+        from python_doc_assistant.generation.qwen_backend import QwenGenerator
+
+        assert model_id is not None
+        generator = QwenGenerator(model_id)
+        model_field = model_id
+
     run_result = evaluate_with_generation(
         eval_queries, retrieve_fn, generator, chunks_by_id, max_k=max_k
     )
@@ -1033,7 +1092,7 @@ def _run_eval_with_optional_generation(
         "top_p": generator.top_p,
         "max_new_tokens": generator.max_new_tokens,
     }
-    return run_result, model_id, decoding_params
+    return run_result, model_field, decoding_params
 
 
 # ------------------------------------------------------------------
