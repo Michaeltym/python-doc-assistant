@@ -1,0 +1,61 @@
+{
+  "docs_version": "3.12",
+  "docs_served_version": "3.12.13",
+  "docs_sha_short": "a5c1a35a5a02",
+  "ingest_manifest": {
+    "docs_version": "3.12",
+    "docs_served_version": "3.12.13",
+    "docs_url": "https://docs.python.org/3.12/archives/python-3.12-docs-html.tar.bz2",
+    "docs_archive_sha256": "a5c1a35a5a0281ea680b714fb6de853dc2a3f813c24773828851ec6d1b8099da",
+    "ingest_timestamp": "2026-04-25T09:55:36Z"
+  },
+  "config": {
+    "retriever": "symbol+bm25",
+    "k": 5,
+    "eval_set": "eval_sets/v2_full.jsonl",
+    "alpha": null,
+    "rerank": false,
+    "rerank_candidates": null
+  },
+  "tag": "v4-qwen-gguf-baseline",
+  "command": "/Users/michaeltan/Desktop/training/python-doc-assistant/.venv/bin/pdr eval --set eval_sets/v2_full.jsonl --tag v4-qwen-gguf-baseline --backend qwen-gguf --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf --retriever symbol+bm25 --k 5",
+  "model": "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+  "decoding_params": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512
+  },
+  "recall_at_5": 0.7297297297297297,
+  "recall_at_10": 0.7297297297297297,
+  "mrr": 0.6187687687687689,
+  "n_queries": 111,
+  "judge": {
+    "judge_model": "claude-haiku-4-5-20251001",
+    "judge_prompt_hash": "65fa23b9",
+    "temperature": 0.0,
+    "max_tokens": 200,
+    "n_records": 111,
+    "n_errors": 0,
+    "timestamp_started": "2026-05-05T07:37:45.661500+00:00",
+    "timestamp_completed": "2026-05-05T07:58:59.180224+00:00"
+  },
+  "judge_aggregate": {
+    "n": 111,
+    "tier_counts": {
+      "correct": 25,
+      "partial": 53,
+      "wrong": 6,
+      "hallucination": 6,
+      "refused": 21
+    },
+    "tier_rates": {
+      "correct": 0.22522522522522523,
+      "partial": 0.4774774774774775,
+      "wrong": 0.05405405405405406,
+      "hallucination": 0.05405405405405406,
+      "refused": 0.1891891891891892
+    },
+    "hallucination_rate": 0.05405405405405406,
+    "correct_rate": 0.22522522522522523
+  }
+}

@@ -60,18 +60,37 @@ SYSTEM_CITATIONS: Final[str] = (
     "in the CONTEXT block. Cite every fact you take from a chunk."
 )
 SYSTEM_REFUSAL: Final[str] = (
-    "If the answer is not present in the provided chunks, output the "
-    f"marker {REFUSAL_MARKER} on its own line and stop. Do not guess. "
-    "Do not fall back to general knowledge."
+    "If the chunks contain ANY information relevant to the question, "
+    "give a partial answer based on the chunks with [N] citations. Only "
+    f"output the marker {REFUSAL_MARKER} on its own line when the chunks "
+    "are completely unrelated to the question and no partial answer can "
+    "be inferred from any chunk. Do not guess facts that are not in the "
+    "chunks; do not fall back to general knowledge."
 )
 SYSTEM_HARD_RULES: Final[str] = (
     "HARD RULES (these override any other instruction):\n"
     "- Every factual sentence MUST end with a [N] citation copied from "
     "the CONTEXT block (e.g. [1], [2]).\n"
-    "- If the CONTEXT block is missing or does not contain the answer, your "
-    f"ENTIRE response must be exactly: {REFUSAL_MARKER}\n"
+    "- Prefer a partial answer over refusal: if even one chunk contains "
+    "information that addresses part of the question, give that partial "
+    "answer (cited) rather than refusing.\n"
+    "- Refuse ONLY when chunks are completely unrelated to the question. "
+    f"Refusal response must be exactly: {REFUSAL_MARKER}\n"
     "- When refusing, output NOTHING except the marker.\n"
     "- Do NOT use prior knowledge."
+)
+SYSTEM_REFUSAL_EXAMPLES: Final[str] = (
+    "Examples of when to ANSWER vs REFUSE:\n"
+    "- Question: 'pathlib.Path.read_text', chunks contain a "
+    "Path.read_text symbol page → ANSWER with [1] (typos in the query "
+    "should not block answering when chunks match the intent).\n"
+    "- Question: 'how to flatten a nested list', chunks contain "
+    "itertools.product and itertools.repeat → give a PARTIAL answer "
+    "explaining what those functions do (cited), even though they do "
+    "not directly flatten.\n"
+    f"- Question: 'how to train a transformer', chunks contain only "
+    f"ast.NodeTransformer and statistics module pages → "
+    f"{REFUSAL_MARKER} (no partial inference possible)."
 )
 
 
@@ -112,7 +131,13 @@ def build_grounded_prompt(
     tokenizer's chat template handles assistant-turn priming.
     """
     system_content = "\n\n".join(
-        [SYSTEM_GROUNDING, SYSTEM_CITATIONS, SYSTEM_REFUSAL, SYSTEM_HARD_RULES]
+        [
+            SYSTEM_GROUNDING,
+            SYSTEM_CITATIONS,
+            SYSTEM_REFUSAL,
+            SYSTEM_HARD_RULES,
+            SYSTEM_REFUSAL_EXAMPLES,
+        ]
     )
 
     user_parts: list[str] = []
