@@ -80,7 +80,7 @@ def test_default_constants() -> None:
     assert DEFAULT_MAX_NEW_TOKENS == 512
     assert DEFAULT_TEMPERATURE == 0.0
     assert DEFAULT_TOP_P == 1.0
-    assert DEFAULT_N_CTX == 4096
+    assert DEFAULT_N_CTX == 8192
     assert DEFAULT_N_GPU_LAYERS == -1
 
 

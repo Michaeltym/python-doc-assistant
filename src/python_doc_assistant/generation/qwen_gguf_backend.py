@@ -33,7 +33,7 @@ from python_doc_assistant.retrieval.router import QueryType
 DEFAULT_MAX_NEW_TOKENS: Final[int] = 512
 DEFAULT_TEMPERATURE: Final[float] = 0.0
 DEFAULT_TOP_P: Final[float] = 1.0
-DEFAULT_N_CTX: Final[int] = 4096
+DEFAULT_N_CTX: Final[int] = 8192
 DEFAULT_N_GPU_LAYERS: Final[int] = -1  # -1 = offload all layers to Metal
 
 
