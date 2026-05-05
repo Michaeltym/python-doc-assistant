@@ -75,9 +75,11 @@ def evaluate_with_generation(
           "out_of_scope"); use `QueryType(pq.query_type)` to resolve, and
           fall back to None on ValueError.
     """
+    from tqdm import tqdm
+
     eval_result = evaluate(eval_queries, retrieve_fn, max_k=max_k)
     queries: list[PerQueryResult] = []
-    for q in eval_result.queries:
+    for q in tqdm(eval_result.queries, desc="generating", unit="query"):
         retrieved_chunks = _build_generation_chunks(q, chunks_by_id, k_for_generation)
         answer = generator.generate(
             q.query, retrieved_chunks, query_type=_resolve_query_type(q.query_type)
