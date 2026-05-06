@@ -1,6 +1,8 @@
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
+import { remarkCiteMarker } from "../lib/remarkCiteMarker";
 import type { Message } from "../types";
 import { Citation } from "./Citation";
 
@@ -18,14 +20,25 @@ function StreamingDots() {
   );
 }
 
-/**
- * Pre-process the model's answer:
- *  - Replace bare [N] citation markers with a span the markdown
- *    renderer leaves alone (so highlight.js doesn't try to parse them
- *    as code), styled separately.
- */
-function preprocessAnswer(text: string): string {
-  return text.replace(/\[(\d+)\]/g, '<span class="cite-marker">$1</span>');
+function RefusalMessage() {
+  return (
+    <div className="space-y-2 text-[14px] leading-relaxed">
+      <p className="text-cream-50">
+        I couldn&rsquo;t find this in the Python standard library docs.
+      </p>
+      <p className="text-cream-200/70">
+        Try a more specific query — for example a module / class / function name like{" "}
+        <code className="rounded bg-forest-950 px-1 py-0.5 font-mono text-[12px] text-sand-400">
+          pathlib.Path.read_text
+        </code>
+        , or a how-to such as{" "}
+        <code className="rounded bg-forest-950 px-1 py-0.5 font-mono text-[12px] text-sand-400">
+          how to merge two dicts
+        </code>
+        .
+      </p>
+    </div>
+  );
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
@@ -43,6 +56,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   const errored = message.errored;
   const refused = message.meta?.refused;
+  const citedChunks = message.meta?.cited_chunks ?? [];
+  const isStreaming = message.streaming && !message.text;
+  const showText = !refused && !!message.text;
 
   return (
     <div className="flex animate-fade-up flex-col gap-2">
@@ -57,37 +73,31 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               errored
                 ? "border-red-900/60 bg-red-950/40 text-red-100"
                 : refused
-                  ? "border-olive-700 bg-forest-900/60 text-cream-200/70 italic"
+                  ? "border-olive-700 bg-forest-900/60 text-cream-200/80"
                   : "border-olive-700 bg-forest-900/80 text-cream-50",
             ].join(" ")}
           >
-            {message.text ? (
+            {refused ? (
+              <RefusalMessage />
+            ) : showText ? (
               <div className="prose-answer">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight]}
-                  // eslint-disable-next-line react/no-children-prop
-                  children={preprocessAnswer(message.text)}
-                  components={{
-                    span: ({ className, ...props }) =>
-                      className === "cite-marker" ? (
-                        <span className="cite-marker" {...props} />
-                      ) : (
-                        <span className={className} {...props} />
-                      ),
-                  }}
-                />
+                  remarkPlugins={[remarkGfm, remarkCiteMarker]}
+                  rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                >
+                  {message.text}
+                </ReactMarkdown>
               </div>
-            ) : (
+            ) : isStreaming ? (
               <StreamingDots />
-            )}
+            ) : null}
           </div>
 
-          {/* Citation pills */}
-          {!errored && message.meta && message.meta.cited_chunk_ids.length > 0 && (
+          {/* Citation pills (links to docs.python.org). */}
+          {!errored && citedChunks.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {message.meta.cited_chunk_ids.map((cid, i) => (
-                <Citation key={cid} chunkId={cid} index={i + 1} />
+              {citedChunks.map((c, i) => (
+                <Citation key={c.chunk_id} chunk={c} index={i + 1} />
               ))}
             </div>
           )}
@@ -96,14 +106,15 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {message.meta && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-cream-200/60">
               {message.meta.refused ? (
-                <span className="text-cream-200/60 italic">insufficient context — refused</span>
+                <span className="text-cream-200/60 italic">
+                  no matching docs · {message.meta.latency_seconds.toFixed(1)}s
+                </span>
               ) : (
                 <span>
                   <span className="font-mono text-cream-200">
                     {message.meta.latency_seconds.toFixed(1)}s
                   </span>{" "}
-                  · {message.meta.cited_chunk_ids.length}{" "}
-                  {message.meta.cited_chunk_ids.length === 1 ? "source" : "sources"}
+                  · {citedChunks.length} {citedChunks.length === 1 ? "source" : "sources"}
                 </span>
               )}
               {message.meta.rewritten_query && (

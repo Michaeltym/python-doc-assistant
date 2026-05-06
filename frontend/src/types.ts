@@ -8,9 +8,15 @@ export interface AskRequest {
   hyde?: boolean;
 }
 
+export interface CitedChunk {
+  chunk_id: string;
+  title: string;
+  url: string;
+}
+
 export interface DonePayload {
   refused: boolean;
-  cited_chunk_ids: string[];
+  cited_chunks: CitedChunk[];
   latency_seconds: number;
   rewritten_query: string | null;
 }

@@ -85,13 +85,18 @@ export function useAsk(): UseAskResult {
       const decoder = new TextDecoder();
       let buffer = "";
 
+      // SSE events are separated by a blank line. The HTML5 SSE spec
+      // permits any of \n\n, \r\n\r\n, or \r\r as the event boundary;
+      // sse_starlette emits \r\n\r\n. Normalise CRLF → LF so the
+      // boundary search and parseBlock both see consistent line endings.
+      const findEventBoundary = (buf: string): number => buf.indexOf("\n\n");
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
 
-        // SSE events are separated by a blank line (\n\n).
-        let sep = buffer.indexOf("\n\n");
+        let sep = findEventBoundary(buffer);
         while (sep !== -1) {
           const block = buffer.slice(0, sep);
           buffer = buffer.slice(sep + 2);
@@ -101,7 +106,7 @@ export function useAsk(): UseAskResult {
             else if (ev.type === "done") handlers.onDone?.(ev.payload);
             else if (ev.type === "error") handlers.onError?.(ev.payload.message);
           }
-          sep = buffer.indexOf("\n\n");
+          sep = findEventBoundary(buffer);
         }
       }
     } catch (err) {

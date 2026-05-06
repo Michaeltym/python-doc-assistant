@@ -1,20 +1,25 @@
+import type { CitedChunk } from "../types";
+
 interface CitationProps {
-  chunkId: string;
+  chunk: CitedChunk;
   index?: number;
 }
 
 /**
- * Pill rendered next to assistant messages for each cited chunk_id.
- * Format: a small numbered marker + the human-readable symbol.
+ * Pill rendered next to assistant messages for each cited chunk.
+ * Wraps an anchor that opens the canonical docs.python.org page.
  */
-export function Citation({ chunkId, index }: CitationProps) {
-  const [type, name] = chunkId.split(/:(.*)/);
-  const label = name ?? chunkId;
+export function Citation({ chunk, index }: CitationProps) {
+  const [type, name] = chunk.chunk_id.split(/:(.*)/);
   const isSymbol = type === "symbol";
+  const label = name ?? chunk.chunk_id;
 
   return (
-    <span
-      title={chunkId}
+    <a
+      href={chunk.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`${chunk.chunk_id} — ${chunk.url}`}
       className="group inline-flex items-center gap-1.5 rounded-full border border-olive-700 bg-forest-900/80 px-2.5 py-0.5 text-xs transition hover:border-sand-500 hover:bg-forest-900"
     >
       {index !== undefined && (
@@ -26,6 +31,6 @@ export function Citation({ chunkId, index }: CitationProps) {
       <span className="font-mono text-[12px] text-cream-100 group-hover:text-sand-400">
         {label}
       </span>
-    </span>
+    </a>
   );
 }

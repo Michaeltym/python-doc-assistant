@@ -29,6 +29,33 @@
   pre code.hljs {
     background: transparent !important;
   }
+
+  /* Custom scrollbar — narrow, palette-aligned, fades in on hover.
+     Firefox uses `scrollbar-color`; WebKit uses pseudo-elements. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.olive.700") transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: theme("colors.olive.700");
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: theme("colors.olive.600");
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 @layer components {
@@ -43,10 +70,17 @@
     @apply rounded bg-forest-950 px-1.5 py-0.5 font-mono text-[13px] text-sand-400;
   }
   .prose-answer pre {
-    @apply my-3 overflow-x-auto rounded-lg border border-olive-700 bg-forest-950 p-3 text-[13px] leading-relaxed;
+    @apply my-3 rounded-lg border border-olive-700 bg-forest-950 p-3 text-[13px] leading-relaxed;
+    /* Wrap long lines instead of showing a horizontal scrollbar.
+       `pre-wrap` keeps newlines + indentation; `anywhere` lets very
+       long unbroken tokens (URLs, long strings) wrap mid-token. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: normal;
   }
   .prose-answer pre code {
     @apply bg-transparent p-0 font-mono text-cream-100;
+    white-space: inherit;
   }
   .prose-answer ul,
   .prose-answer ol {
@@ -89,9 +123,11 @@
     @apply bg-olive-800 font-medium;
   }
 
-  /* Citation-bracket markers like [1] — render small + sand so they
-     read as references rather than body text. */
+  /* Citation markers like [1] or [1, 3] — visually de-emphasised so
+     the prose dominates. The full citation list is rendered as
+     clickable pills below the answer; these inline markers are just
+     a reference back to those pills. */
   .prose-answer .cite-marker {
-    @apply mx-0.5 inline-block rounded bg-sand-500/20 px-1 font-mono text-[11px] font-medium text-sand-400;
+    @apply mx-0.5 inline-block align-baseline font-mono text-[10.5px] leading-none text-sand-500/70;
   }
 }
