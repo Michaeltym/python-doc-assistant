@@ -54,22 +54,6 @@ SYSTEM_GROUNDING: Final[str] = (
     "using ONLY the documentation chunks provided below. Do not invent "
     "facts that are not present in the chunks."
 )
-SYSTEM_TYPO_TOLERANCE: Final[str] = (
-    "TYPO TOLERANCE (READ THIS FIRST):\n"
-    "Users often misspell Python symbol names. The retriever already "
-    "looks them up by similarity, so the chunks below ARE the answer to "
-    "the user's intended symbol. Treat the query as if it were spelled "
-    "the same as the closest matching symbol in the chunks.\n"
-    "- 'json.loadss' MEANS json.loads. ANSWER.\n"
-    "- 'dict.fromKeys' MEANS dict.fromkeys. ANSWER.\n"
-    "- 'dict.fromkeyss' MEANS dict.fromkeys. ANSWER.\n"
-    "- 'subprocess.runn' MEANS subprocess.run. ANSWER.\n"
-    "- 'pathlib.Path.raed_text' MEANS pathlib.Path.read_text. ANSWER.\n"
-    "You MUST NOT refuse a query merely because the spelling does not "
-    "match a chunk exactly. Extra letters, missing letters, swapped "
-    "letters, case differences = typo, not a different symbol. When in "
-    "doubt between answering and refusing on a near-match, ANSWER."
-)
 SYSTEM_CITATIONS: Final[str] = (
     "When you reference a chunk in your answer, cite it inline using the "
     "format [N], where N is the number shown at the start of each chunk "
@@ -80,10 +64,8 @@ SYSTEM_REFUSAL: Final[str] = (
     "give a partial answer based on the chunks with [N] citations. Only "
     f"output the marker {REFUSAL_MARKER} on its own line when the chunks "
     "are completely unrelated to the question and no partial answer can "
-    "be inferred from any chunk. A near-spelling match to a chunk "
-    "symbol is NOT 'unrelated' — it is a typo and you must ANSWER. Do "
-    "not guess facts that are not in the chunks; do not fall back to "
-    "general knowledge."
+    "be inferred from any chunk. Do not guess facts that are not in the "
+    "chunks; do not fall back to general knowledge."
 )
 SYSTEM_HARD_RULES: Final[str] = (
     "HARD RULES (these override any other instruction):\n"
@@ -92,19 +74,20 @@ SYSTEM_HARD_RULES: Final[str] = (
     "- Prefer a partial answer over refusal: if even one chunk contains "
     "information that addresses part of the question, give that partial "
     "answer (cited) rather than refusing.\n"
-    "- A near-spelling match to a chunk symbol counts as relevant — "
-    "ANSWER, do not refuse.\n"
-    "- Refuse ONLY when chunks are completely unrelated AND no near-"
-    f"spelling match exists. Refusal response must be exactly: {REFUSAL_MARKER}\n"
+    "- Refuse ONLY when chunks are completely unrelated to the question. "
+    f"Refusal response must be exactly: {REFUSAL_MARKER}\n"
     "- When refusing, output NOTHING except the marker.\n"
     "- Do NOT use prior knowledge."
 )
 SYSTEM_REFUSAL_EXAMPLES: Final[str] = (
     "Examples of when to ANSWER vs REFUSE:\n"
+    "- Question: 'pathlib.Path.read_text', chunks contain a "
+    "Path.read_text symbol page → ANSWER with [1] (typos in the query "
+    "should not block answering when chunks match the intent).\n"
     "- Question: 'how to flatten a nested list', chunks contain "
-    "itertools.product and itertools.repeat (related but not direct) → "
-    "give a PARTIAL answer explaining what those functions do (cited), "
-    "and note they do not directly flatten.\n"
+    "itertools.product and itertools.repeat → give a PARTIAL answer "
+    "explaining what those functions do (cited), even though they do "
+    "not directly flatten.\n"
     f"- Question: 'how to train a transformer', chunks contain only "
     f"ast.NodeTransformer and statistics module pages → "
     f"{REFUSAL_MARKER} (no partial inference possible)."
@@ -150,7 +133,6 @@ def build_grounded_prompt(
     system_content = "\n\n".join(
         [
             SYSTEM_GROUNDING,
-            SYSTEM_TYPO_TOLERANCE,
             SYSTEM_CITATIONS,
             SYSTEM_REFUSAL,
             SYSTEM_HARD_RULES,

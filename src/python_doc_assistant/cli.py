@@ -320,6 +320,7 @@ def ask(
     gen_chunks = [chunks_by_id[r.chunk_id] for r in retrieved if r.chunk_id in chunks_by_id]
     from python_doc_assistant.generation.interface import Generator
     from python_doc_assistant.prompts.grounded import build_grounded_prompt
+    from python_doc_assistant.retrieval.query_rewriter import maybe_rewrite_query
     from python_doc_assistant.retrieval.router import classify
 
     generator: Generator
@@ -343,17 +344,21 @@ def ask(
 
         generator = QwenGenerator(model_id)
     qt = classify(query)
-    answer = generator.generate(query, gen_chunks, query_type=qt)
+    generator_query = maybe_rewrite_query(query, gen_chunks)
+    answer = generator.generate(generator_query, gen_chunks, query_type=qt)
     click.echo(answer.text or "[INSUFFICIENT-CONTEXT]")
 
     if debug:
         click.echo("")
+        if generator_query != query:
+            click.echo(f"[debug] query rewritten: {query!r} -> {generator_query!r}")
+            click.echo("")
         click.echo("[debug] retrieved:")
         for r in retrieved:
             click.echo(f"  rank={r.rank}  score={r.score:.3f}  id={r.chunk_id}")
         click.echo("")
         click.echo("[debug] prompt (chat messages):")
-        messages = build_grounded_prompt(query, gen_chunks, query_type=qt)
+        messages = build_grounded_prompt(generator_query, gen_chunks, query_type=qt)
         for m in messages:
             click.echo(f"--- {m['role']} ---")
             click.echo(m["content"])

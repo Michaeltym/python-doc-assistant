@@ -28,6 +28,7 @@ from python_doc_assistant.evaluation.retrieval_metrics import (
 )
 from python_doc_assistant.generation.interface import Generator
 from python_doc_assistant.ingest.chunker import Chunk
+from python_doc_assistant.retrieval.query_rewriter import maybe_rewrite_query
 from python_doc_assistant.retrieval.router import QueryType
 
 # ------------------------------------------------------------------
@@ -81,8 +82,9 @@ def evaluate_with_generation(
     queries: list[PerQueryResult] = []
     for q in tqdm(eval_result.queries, desc="generating", unit="query"):
         retrieved_chunks = _build_generation_chunks(q, chunks_by_id, k_for_generation)
+        generator_query = maybe_rewrite_query(q.query, retrieved_chunks)
         answer = generator.generate(
-            q.query, retrieved_chunks, query_type=_resolve_query_type(q.query_type)
+            generator_query, retrieved_chunks, query_type=_resolve_query_type(q.query_type)
         )
         queries.append(
             _attach_answer(

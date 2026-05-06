@@ -1,0 +1,61 @@
+{
+  "docs_version": "3.12",
+  "docs_served_version": "3.12.13",
+  "docs_sha_short": "a5c1a35a5a02",
+  "ingest_manifest": {
+    "docs_version": "3.12",
+    "docs_served_version": "3.12.13",
+    "docs_url": "https://docs.python.org/3.12/archives/python-3.12-docs-html.tar.bz2",
+    "docs_archive_sha256": "a5c1a35a5a0281ea680b714fb6de853dc2a3f813c24773828851ec6d1b8099da",
+    "ingest_timestamp": "2026-04-25T09:55:36Z"
+  },
+  "config": {
+    "retriever": "dense",
+    "k": 5,
+    "eval_set": "eval_sets/v2_full.jsonl",
+    "alpha": null,
+    "rerank": true,
+    "rerank_candidates": 20
+  },
+  "tag": "v4-qwen-gguf-dense-rerank-calib-r3",
+  "command": "/Users/michaeltan/Desktop/training/python-doc-assistant/.venv/bin/pdr eval --set eval_sets/v2_full.jsonl --tag v4-qwen-gguf-dense-rerank-calib-r3 --backend qwen-gguf --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf --retriever dense --rerank --rerank-candidates 20 --k 5",
+  "model": "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+  "decoding_params": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512
+  },
+  "recall_at_5": 0.8288288288288288,
+  "recall_at_10": 0.8288288288288288,
+  "mrr": 0.690840840840841,
+  "n_queries": 111,
+  "judge": {
+    "judge_model": "claude-haiku-4-5-20251001",
+    "judge_prompt_hash": "65fa23b9",
+    "temperature": 0.0,
+    "max_tokens": 200,
+    "n_records": 111,
+    "n_errors": 0,
+    "timestamp_started": "2026-05-05T22:11:58.909142+00:00",
+    "timestamp_completed": "2026-05-05T22:33:12.788979+00:00"
+  },
+  "judge_aggregate": {
+    "n": 111,
+    "tier_counts": {
+      "correct": 26,
+      "partial": 61,
+      "wrong": 5,
+      "hallucination": 14,
+      "refused": 5
+    },
+    "tier_rates": {
+      "correct": 0.23423423423423423,
+      "partial": 0.5495495495495496,
+      "wrong": 0.04504504504504504,
+      "hallucination": 0.12612612612612611,
+      "refused": 0.04504504504504504
+    },
+    "hallucination_rate": 0.12612612612612611,
+    "correct_rate": 0.23423423423423423
+  }
+}
