@@ -67,6 +67,18 @@ def test_extract_citations_ignores_non_integer_brackets() -> None:
     assert _extract_citations("[INSUFFICIENT-CONTEXT] and [foo] and [text](url)") == ()
 
 
+def test_extract_citations_handles_comma_separated_in_one_bracket() -> None:
+    """Model sometimes emits `[1, 3]` instead of `[1] [3]` — same meaning."""
+    assert _extract_citations("answer body [1, 3]") == (1, 3)
+    assert _extract_citations("compact form [1,3] also works") == (1, 3)
+    assert _extract_citations("triple [1, 2, 3]") == (1, 2, 3)
+
+
+def test_extract_citations_dedupes_across_mixed_forms() -> None:
+    """Mixing `[1]` and `[1, 3]` should still collapse duplicates."""
+    assert _extract_citations("first [1] then [1, 3]") == (1, 3)
+
+
 # ------------------------------------------------------------------
 # _is_refusal
 # ------------------------------------------------------------------

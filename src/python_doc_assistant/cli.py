@@ -855,6 +855,238 @@ def eval_cmd(
 
 
 # ------------------------------------------------------------------
+# Subcommand: serve (v4 sub-tasks 7 / 9 — HTTP server + web UI)
+# ------------------------------------------------------------------
+
+
+@main.command(name="serve")
+@click.option(
+    "--gguf-model",
+    "gguf_model_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to GGUF model file (Qwen2.5-7B-Instruct Q4_K_M GGUF first shard).",
+)
+@click.option("--version", default=None, help="Override config.toml DOCS_VERSION.")
+@click.option("--docs-sha", default=None, help="Use a specific sha_short (else current.txt).")
+@click.option(
+    "--k", type=int, default=5, help="Default top-k chunks per request (client may override)."
+)
+@click.option(
+    "--retriever",
+    type=click.Choice(
+        ["bm25", "symbol+bm25", "dense", "hybrid-rrf", "hybrid-linear"],
+        case_sensitive=True,
+    ),
+    default="dense",
+    help=(
+        "Retrieval pipeline. v4 production stack uses 'dense' + --rerank + --hyde. "
+        "Other retrievers work but the eval numbers in the v4 narrative assume dense+rerank."
+    ),
+)
+@click.option(
+    "--alpha",
+    type=float,
+    default=0.5,
+    help="Linear-merge alpha (only used when --retriever=hybrid-linear).",
+)
+@click.option(
+    "--rerank/--no-rerank",
+    default=True,
+    help="Wrap the chosen retriever with a cross-encoder reranker (default on).",
+)
+@click.option(
+    "--rerank-candidates",
+    type=int,
+    default=20,
+    help="N candidates fetched from the inner retriever before rerank (default 20).",
+)
+@click.option(
+    "--hyde/--no-hyde",
+    default=True,
+    help=(
+        "Enable HyDE preprocessing for non-identifier queries (default on; requires "
+        "--retriever=dense)."
+    ),
+)
+@click.option("--host", default="127.0.0.1", help="HTTP bind host (default 127.0.0.1).")
+@click.option("--port", type=int, default=8000, help="HTTP bind port (default 8000).")
+@click.option(
+    "--frontend-dist",
+    default="frontend/dist",
+    type=click.Path(file_okay=False, path_type=Path),
+    help=(
+        "Path to the built React frontend. When the directory exists, FastAPI mounts it at "
+        "'/'. Run `cd frontend && npm run build` first, or use `npm run dev` (Vite at :5173 "
+        "with /api proxy) instead."
+    ),
+)
+def serve_cmd(
+    gguf_model_path: Path,
+    version: str | None,
+    docs_sha: str | None,
+    k: int,
+    retriever: str,
+    alpha: float,
+    rerank: bool,
+    rerank_candidates: int,
+    hyde: bool,
+    host: str,
+    port: int,
+    frontend_dist: Path,
+) -> None:
+    """Start an HTTP server exposing /api/ask + /health + the web UI.
+
+    The server holds a single QwenGGUFGenerator instance + a single
+    retrieve_fn closure for the lifetime of the process. Requests
+    serialise behind an asyncio.Lock — concurrent clients queue. See
+    `src/python_doc_assistant/service/app.py` for the FastAPI wiring.
+
+    Implementation outline:
+
+        1. Resolve docs_version + docs_sha exactly like `eval_cmd` so
+           the same chunks/indexes the v4 numbers were measured
+           against are loaded.
+
+        2. Load the persisted artefacts:
+              chunks      = _load_chunks(chunks_path)
+              symbols     = parse_objects_inv(docs_dir)
+              symbol_idx  = SymbolIndex(chunks, symbols)
+              bm25_index  = BM25Index.load(bm25_path)
+              chunks_by_id = {c.chunk_id: c for c in chunks}
+
+        3. Validate flag combos (mirror eval_cmd):
+              - hyde requires backend=qwen-gguf (here always true) AND
+                retriever == "dense" (raise click.UsageError otherwise).
+
+        4. Build the QwenGGUFGenerator first (so the HyDE generator
+           can share its Llama instance — no double-loading the 4.7 GB
+           model):
+              from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
+              generator = QwenGGUFGenerator(model_path=gguf_model_path)
+
+        5. If hyde, build the QwenHypotheticalGenerator on the same
+           Llama:
+              from python_doc_assistant.retrieval.hyde import QwenHypotheticalGenerator
+              hypothetical_generator = QwenHypotheticalGenerator(generator.llm)
+
+        6. Build retrieve_fn via the existing helper:
+              retrieve_fn = _build_eval_retrieve_fn(
+                  retriever=retriever,
+                  chunks=chunks,
+                  chunks_by_id=chunks_by_id,
+                  docs_version=docs_version,
+                  docs_sha=docs_sha,
+                  bm25_index=bm25_index,
+                  symbol_index=symbol_idx,
+                  alpha=alpha,
+                  rerank=rerank,
+                  rerank_candidates=rerank_candidates,
+                  hyde=hyde,
+                  hypothetical_generator=hypothetical_generator,
+              )
+
+        7. Build the AskState. The asyncio.Lock can be a fresh one;
+           uvicorn binds the same event loop the FastAPI handlers
+           run on, so the lock is shared correctly:
+              import asyncio
+              from python_doc_assistant.service.app import AskState, build_app
+
+              static_root = frontend_dist if frontend_dist.is_dir() else None
+              state = AskState(
+                  generator=generator,
+                  retrieve_fn=retrieve_fn,
+                  chunks_by_id=chunks_by_id,
+                  lock=asyncio.Lock(),
+                  static_root=static_root,
+              )
+
+        8. Build the FastAPI app + run it via uvicorn:
+              import uvicorn
+              app = build_app(state)
+              click.echo(f"serving on http://{host}:{port}")
+              if static_root:
+                  click.echo(f"  ui: mounted from {static_root}")
+              else:
+                  click.echo("  ui: not built (run `cd frontend && npm run build`)")
+              uvicorn.run(app, host=host, port=port, log_level="info")
+
+    All FastAPI / uvicorn / generator imports MUST stay inside this
+    function so the v0 / no-extras install path keeps `python -m
+    python_doc_assistant` importable.
+    """
+    import asyncio
+
+    import uvicorn
+
+    from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
+    from python_doc_assistant.retrieval.hyde import QwenHypotheticalGenerator
+    from python_doc_assistant.service.app import AskState, build_app
+
+    if hyde and retriever != "dense":
+        raise click.UsageError("--hyde requires --retriever=dense")
+
+    eff_version = _resolve_docs_version(version)
+    eff_sha = _resolve_docs_sha(eff_version, docs_sha)
+    docs_dir = DEFAULT_DATA_ROOT / "docs" / eff_version / eff_sha
+    chunks_path = DEFAULT_DATA_ROOT / "chunks" / eff_version / eff_sha / "chunks.jsonl"
+    bm25_path = DEFAULT_DATA_ROOT / "indexes" / eff_version / eff_sha / "bm25.pkl"
+
+    click.echo(f"loading chunks + indexes from {docs_dir}")
+    chunks = _load_chunks(chunks_path)
+    symbols = parse_objects_inv(docs_dir)
+    symbol_idx = SymbolIndex(chunks, symbols)
+    bm25_index = BM25Index.load(bm25_path)
+    chunks_by_id = {c.chunk_id: c for c in chunks}
+
+    click.echo(f"loading qwen-gguf generator: {gguf_model_path.name}")
+    generator = QwenGGUFGenerator(model_path=gguf_model_path)
+
+    hypothetical_generator: HypotheticalGenerator | None = None
+    if hyde:
+        hypothetical_generator = QwenHypotheticalGenerator(generator.llm)
+
+    retrieve_fn = _build_eval_retrieve_fn(
+        retriever=retriever,
+        chunks=chunks,
+        chunks_by_id=chunks_by_id,
+        docs_version=eff_version,
+        docs_sha=eff_sha,
+        bm25_index=bm25_index,
+        symbol_index=symbol_idx,
+        alpha=alpha,
+        rerank=rerank,
+        rerank_candidates=rerank_candidates,
+        hyde=hyde,
+        hypothetical_generator=hypothetical_generator,
+    )
+
+    # Default top-k. The frontend's AskRequest may override this per-call;
+    # the eval pipeline reuses k from the CLI flag. Stash it on state for
+    # observability — the actual k flowing into retrieve_fn comes from
+    # AskRequest.k inside _ask_stream.
+    _ = k
+
+    static_root = frontend_dist if frontend_dist.is_dir() else None
+    state = AskState(
+        generator=generator,
+        retrieve_fn=retrieve_fn,
+        chunks_by_id=chunks_by_id,
+        lock=asyncio.Lock(),
+        static_root=static_root,
+    )
+
+    app = build_app(state)
+    click.echo(f"serving on http://{host}:{port}")
+    click.echo(f"  retriever={retriever} rerank={rerank} hyde={hyde}")
+    if static_root:
+        click.echo(f"  ui mounted: {static_root}")
+    else:
+        click.echo("  ui not built (run `cd frontend && npm run build` or `npm run dev`)")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+# ------------------------------------------------------------------
 # Helpers (private)
 # ------------------------------------------------------------------
 

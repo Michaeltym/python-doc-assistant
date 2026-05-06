@@ -206,15 +206,27 @@ def _query_type_structure(query_type: QueryType | None) -> str:
 
 
 def _extract_citations(text: str) -> tuple[int, ...]:
-    """Pull `[N]` markers (1-indexed positive integers) out of `text`.
+    """Pull `[N]` and `[N, M, ...]` markers (1-indexed positive integers) out of `text`.
 
-    Order preserved, duplicates collapsed. Non-integer brackets like
-    `[INSUFFICIENT-CONTEXT]` or markdown links `[text](url)` are ignored.
+    Order preserved, duplicates collapsed. The model occasionally folds
+    multiple citations into a single bracket (e.g. `[1, 3]` or `[1,3]`);
+    this is treated the same as separate `[1]` and `[3]` markers.
+    Non-integer brackets like `[INSUFFICIENT-CONTEXT]` or markdown
+    links `[text](url)` are ignored because the inner content fails the
+    digits-and-separators regex.
     """
-    matches = re.findall(r"\[(\d+)\]", text)
-    if len(matches) > 0:
-        return tuple(dict.fromkeys(int(m) for m in matches))
-    return ()
+    indices: list[int] = []
+    seen: set[int] = set()
+    for inner in re.findall(r"\[([\d,\s]+)\]", text):
+        for part in inner.split(","):
+            stripped = part.strip()
+            if not stripped.isdigit():
+                continue
+            value = int(stripped)
+            if value not in seen:
+                seen.add(value)
+                indices.append(value)
+    return tuple(indices)
 
 
 def _is_refusal(text: str) -> bool:
