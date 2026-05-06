@@ -24,7 +24,7 @@ checkpoints below; the doc will be updated as further sub-tasks land.
 | 2 | HyDE retriever + cli `--hyde` flag | ✅ done (commit `ef9c951`) |
 | — | Judge re-evaluation (Haiku 4.5 → Codex CLI) | ✅ done (commit `99964cd`) |
 | 4 | Self-verify loop | ⏸️ deferred (hallucination ≤ 0.01 under Codex judge) |
-| 5b/c | Per-type metrics + refusal F1 | ⏳ pending |
+| 5b/c | Per-type metrics + refusal F1 | ✅ done (`scripts/per_type_metrics.py`) |
 | 6 | `pdr ask` interactive (already exists; gain `--backend qwen-gguf`) | ✅ wired |
 | 1' | Anti-hallucination prompt (deferred) | ⏸️ deferred |
 | 7 / 9 / 10 | Streaming / web UI / MCP | ⏸️ optional |
@@ -560,22 +560,100 @@ Codex would be a self-grading exercise (Codex CLI's internal LLM is
 also GPT-5.5), so we keep that number as-is and treat cross-row
 comparisons against it as directional.
 
+## Per-type breakdown (sub-task 5b/c)
+
+`scripts/per_type_metrics.py` (added in this commit) splits each
+run's tiers by the eval set's `query_type` field and computes a
+refusal F1 using `hit_at_5=False` as proxy ground truth for "chunks
+did not contain the answer". Eval set composition: 40 identifier /
+27 natural_language / 21 comparison / 23 howto (no `out_of_scope`
+rows in v2_full, so the F1 is hit_at_5-driven, not an explicit
+should-refuse label).
+
+### Per-type accuracy across runs (Codex judge)
+
+| Run | identifier | natural_language | comparison | howto | refusal F1 |
+|---|---:|---:|---:|---:|---:|
+| v2 baseline (Qwen 1.5B, dense+rerank) | 0.900 | 0.778 | 0.571 | 0.826 | 0.000 |
+| v4 baseline (7B, symbol+bm25) | 0.800 | 0.593 | 0.714 | 0.783 | 0.431 |
+| v4 R1 calibrated (dense+rerank) | 0.775 | 0.704 | 0.857 | 0.783 | 0.187 |
+| v4 R3 prompt | 0.850 | 0.852 | 0.810 | 0.913 | 0.167 |
+| v4 rewriter | 0.900 | 0.704 | 0.857 | 0.826 | 0.222 |
+| **v4 rewriter + HyDE** | **0.925** | **0.778** | **0.857** | **0.913** | **0.286** |
+
+Three observations the global accuracy hides:
+
+1. **Identifier was not the bottleneck.** v2 baseline already had
+   identifier at 0.900. The v4 work had identifier dip to 0.775
+   (R1 calibrated) before the rewriter pulled it back to 0.900 and
+   HyDE took it to 0.925. The rewriter's impact is concentrated here
+   (typo recovery), exactly where it was designed to operate.
+2. **Comparison was the largest single-class lift.** v2 baseline at
+   0.571 → R1 calibrated at 0.857 = +28.6 pp, the biggest per-class
+   delta in the whole table. The 7B model's calibrated prompt
+   handles "A vs B" framing far better than 1.5B did. HyDE held
+   that level (0.857); the comparison decomp lever we considered
+   for sub-task 2 is unnecessary at this point.
+3. **Natural-language was the v4 stress class.** It dropped from
+   0.778 (v2 baseline) to 0.593 (v4 7B with symbol+bm25, before any
+   sub-task 1 work) because 7B refuses more readily on vague
+   questions and symbol+bm25 surfaces less topical context for NL.
+   R3 briefly took it to 0.852 by being aggressive, but the
+   rewriter alone landed at 0.704. HyDE was specifically designed
+   for this class and recovered NL to 0.778 — exactly the v2
+   baseline level. The HyDE accuracy story is largely the NL
+   accuracy story.
+
+### Refusal F1 reading
+
+The F1 numbers look small (0.167–0.431) because:
+
+- v2 Qwen 1.5B basically never refuses (refused=2/111), so F1=0:
+  precision is undefined, recall is 0 against the 23 hit_at_5=False
+  rows.
+- v4 7B + calibrated prompt refuses 5–13 times; precision is OK
+  (60–100%) but recall against the 16 hit_at_5=False rows is low
+  (model still tries to answer when chunks miss).
+- v4 baseline (symbol+bm25, F1=0.431) has the highest F1 because
+  the symbol+bm25 retriever produces more clearly off-topic chunks
+  on NL queries, which the model correctly refuses. Once the
+  retriever became dense+rerank (R1 onward), more queries got
+  partial-relevance chunks → model partially answers → refusal F1
+  drops even though accuracy goes up.
+
+This is an artefact of using `hit_at_5=False` as proxy ground
+truth: a partial-relevance chunk is hit_at_5=True (the right symbol
+is in retrieval) but the model's reasonable response is still
+"partial answer", not refusal. A proper refusal F1 needs explicit
+`should_refuse` labels in the eval set. v0/v2 chose not to add
+those (`eval_sets/v2_full.jsonl` has no `out_of_scope` rows); a v5
+revision could.
+
+For now the takeaway is: **v4's refusal calibration kept hallucination
+at 0.009 without trading away too much answering coverage** — the F1
+number is informative about the calibration's behaviour even if the
+absolute value is hard to read against an ideal.
+
 ## What's next
 
-- **Sub-task 5b/c (per-type metrics + refusal F1)** — open. With the
-  v4 accuracy target hit and a stable Codex judge across all 5 runs,
-  per-type metrics are the next lever for understanding what's left.
-  In particular: where do the remaining `wrong` rows concentrate
-  (NL queries vs comparison vs how-to)?
 - **Sub-task 4 (self-verify loop)** — deferred indefinitely. Codex
   judge puts hallucination at 0.009; the original 0.10 cap is no
   longer binding.
-- **Comparison decomp + chunker re-cut** — the other two sub-task 2
-  levers we considered before HyDE. Open question: would they push
-  past 0.874? The remaining error pool (8 wrong + 5 refused) is
-  small enough that further levers may have diminishing returns.
+- **Comparison decomp + chunker re-cut** — sub-task 2 leftovers.
+  Per-type breakdown shows comparison is already at 0.857 and HyDE
+  has NL at the v2 baseline level; further sub-task 2 work has
+  diminishing returns. Park.
+- **Eval set v5 with `out_of_scope` rows** — the only way to get a
+  meaningful refusal F1 is explicit ground-truth labels for which
+  queries should refuse. A 10–20 row out-of-scope addition to
+  `v2_full` (or a separate `v5_oos.jsonl`) would fix this.
+- **v2 ablation re-judge for table consistency** — the other 5 v2
+  Qwen runs (`bm25-qwen`, `dense-qwen`, hybrid variants) are still
+  Haiku-graded. Re-judging them via Codex would keep the v2
+  ablation table internally consistent if we ever revisit the v2
+  retrieval ablation.
 
-The v4 narrative is closing for now — the Qwen-only path's accuracy
-target is met with margin. Future work folds into v5 / sub-task 5
-territory (per-type analysis, possibly self-verify if hallucination
-ever climbs).
+The v4 narrative is closing — the Qwen-only path's accuracy target
+is met with margin (0.874 vs 0.78 cap), hallucination is at 0.009
+(vs 0.10 cap), and per-type breakdown shows no class is dragging
+significantly. Future work folds into v5 territory.
