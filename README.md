@@ -245,8 +245,29 @@ auto-mounts `frontend/dist/` at `/` when the directory exists.
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/ask` | Body `{"query": "...", "k": 5, "rerank": true, "hyde": true}` → SSE stream of `token` + `done` events. |
+| `POST` | `/mcp/mcp` | MCP Streamable HTTP transport. Exposes the `ask` tool to MCP-aware clients (Claude Code, Codex CLI). |
 | `GET` | `/health` | Liveness check, `{"status": "ok"}`. |
 | `GET` | `/` | Static React UI when `frontend/dist/` is mounted. |
+
+**Use as a Claude Code / Codex CLI tool (MCP):**
+
+Once `pdr serve` is running, register the MCP endpoint in your client:
+
+```json
+{
+  "mcpServers": {
+    "python-doc-assistant": {
+      "url": "http://localhost:8000/mcp/mcp"
+    }
+  }
+}
+```
+
+The server exposes a single tool — `ask(query, k=5, rerank=true,
+hyde=true)` — that runs the same retrieve → rewrite → generate
+pipeline as `/api/ask` and returns a markdown answer with a Sources
+section linking to docs.python.org. The MCP tool calls and `/api/ask`
+share the same Llama instance, queued behind a single asyncio.Lock.
 
 `pdr serve --help` lists every flag (retriever / rerank / HyDE / port
 / host / frontend-dist).
@@ -324,6 +345,7 @@ against the exact corpus they were measured against.
 | LLM-as-judge (v2 historical) | `anthropic` (`claude-haiku-4-5-20251001`) | v2 §6; 4-tier rubric + Cohen's kappa. Bias documented in `experiments/v4-prod-track.md` Week 3. |
 | LLM-as-judge (v4 final) | Codex CLI internal LLM (GPT-5.5) | v4 Week 3; same prompt hash `65fa23b9`, rubric-faithful re-evaluation. |
 | HTTP server (v4) | `fastapi` + `uvicorn` + `sse-starlette` | v4 sub-task 7; `pdr serve` exposes `/api/ask` (SSE stream) + `/health` + static frontend mount. |
+| MCP (v4) | `mcp` (official Anthropic SDK, FastMCP API) | v4 sub-task 10; `/mcp/mcp` Streamable HTTP transport exposes the `ask` tool. Clients: Claude Code, Codex CLI. |
 | Web UI (v4) | React 19 + Vite 6 + TypeScript + Tailwind 3 + react-markdown | v4 sub-task 9; single-page chat in `frontend/`. Native `fetch` + `ReadableStream` for SSE (EventSource cannot do POST). |
 | Lint + format | `ruff` (E / F / I rules) | Replaces black + isort + flake8. |
 | Type checking | `mypy --strict` | Catches API drift early; `py.typed` marker for downstream consumers. |
@@ -340,7 +362,7 @@ against the exact corpus they were measured against.
 | **v1** | `Qwen2.5-1.5B-Instruct` as a grounded generator with citations + refusal; out-of-scope eval set | [`plans/v1-qwen-generator.md`](plans/v1-qwen-generator.md) | ✅ Grounded prompt + 4-tier scoring shipped |
 | **v2** | Ablation: dense embeddings + hybrid (RRF / linear) + cross-encoder rerank, eval set scaled to 111 queries, LLM-as-judge with kappa-calibrated rubric, cross-generator follow-up | [`plans/v2-ablation.md`](plans/v2-ablation.md) | ✅ Recall@5 = 0.838 on `dense+rerank`; accuracy 61-69% on Qwen 1.5B configs, 75.7% on GPT-5.5; halluc 2.7-25.2% |
 | **v3** | (Research side track) Hand-written decoder-only LLM (RoPE / RMSNorm / SwiGLU / KV cache) plugged into the same RAG pipeline as a comparison backend | [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md) | Research; no accuracy claim — learning value only |
-| **v4** | Production-track accuracy lift on a Qwen-only path: 7B Q4 GGUF backend (`llama.cpp` + Metal), refusal calibration, code-level typo query rewriter (Levenshtein-based), HyDE retriever, judge re-evaluation (Haiku 4.5 → Codex CLI / GPT-5.5), HTTP server + React web UI | [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md), [`experiments/v4-prod-track.md`](experiments/v4-prod-track.md) | ✅ accuracy 0.874 / hallucination 0.009 (n=111, Codex-judged); plan target `≥ 0.78` / `≤ 0.10` exceeded with margin. CLI + FastAPI/React UI both ship. |
+| **v4** | Production-track accuracy lift on a Qwen-only path: 7B Q4 GGUF backend (`llama.cpp` + Metal), refusal calibration, code-level typo query rewriter (Levenshtein-based), HyDE retriever, judge re-evaluation (Haiku 4.5 → Codex CLI / GPT-5.5), HTTP server + React web UI + MCP tool endpoint | [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md), [`experiments/v4-prod-track.md`](experiments/v4-prod-track.md) | ✅ accuracy 0.874 / hallucination 0.009 (n=111, Codex-judged); plan target `≥ 0.78` / `≤ 0.10` exceeded with margin. CLI + FastAPI/React UI + MCP all ship. |
 
 Top-level project plan: [`PLAN.md`](PLAN.md). Per-stage plans are the
 authoritative source for sub-task ordering, acceptance criteria, and
@@ -413,9 +435,10 @@ python-doc-assistant/
     │   ├── generation_eval.py      # v1 §4: per-query generation pipeline
     │   ├── human_scoring.py        # v1 §6: 4-tier scoring schema + aggregate
     │   └── judge.py                # v2 §6: LLM-as-judge (Anthropic Haiku 4.5)
-    ├── service/                    # v4 sub-task 7: HTTP server
+    ├── service/                    # v4 sub-task 7 + 10: HTTP server + MCP
     │   ├── streaming.py            # SSE event helpers (token / done / error)
-    │   └── app.py                  # FastAPI build_app + /api/ask + /health
+    │   ├── app.py                  # FastAPI build_app + /api/ask + /health + /mcp mount + lifespan
+    │   └── mcp.py                  # FastMCP server with `ask` tool over Streamable HTTP
     └── cli.py                      # pdr ingest / build-index / search / ask / eval / judge / serve
 ```
 
@@ -515,9 +538,6 @@ directions, none currently active:
 - **Eval set with explicit `out_of_scope` rows** so refusal F1 is a
   meaningful metric (currently it falls back to `hit_at_5`-proxy F1
   because `v2_full` has no OOS labels).
-- **MCP server endpoint** so this RAG stack shows up as a tool inside
-  Claude Code / Codex CLI — listed as v4 sub-task 10, not yet
-  started. Builds on the existing FastAPI service.
 - **Real token-by-token streaming** in `pdr serve` — the current SSE
   stream emits the full answer in one `token` event (fake-stream).
   Wiring `Llama.create_chat_completion(stream=True)` through to the

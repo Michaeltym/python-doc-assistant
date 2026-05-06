@@ -26,7 +26,7 @@ embedding = ["sentence-transformers", "numpy"]
 rerank = ["sentence-transformers"]
 judge = ["anthropic"]
 tinydocs = ["torch", "tokenizers", "datasets"]
-service = ["fastapi", "uvicorn[standard]", "sse-starlette", "httpx"]
+service = ["fastapi", "uvicorn[standard]", "sse-starlette", "httpx", "mcp"]
 
 [project.scripts]
 python-doc-assistant = "python_doc_assistant.cli:main"

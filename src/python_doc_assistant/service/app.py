@@ -115,11 +115,27 @@ def build_app(state: AskState) -> FastAPI:
     so importing `python_doc_assistant.service` (e.g. by tests) doesn't
     require the `service` extra to be installed at module import time.
     """
+    from contextlib import asynccontextmanager
+
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
     from sse_starlette.sse import EventSourceResponse
 
-    app = FastAPI(title="python-doc-assistant")
+    from python_doc_assistant.service.mcp import build_mcp_server
+
+    # Build the MCP server first so its session manager can be hosted
+    # under FastAPI's lifespan. Streamable HTTP needs the session
+    # manager's task group running for the duration of the app — when
+    # mounted under FastAPI, FastAPI's lifespan is the only thing that
+    # gets invoked, so we explicitly enter the session manager here.
+    mcp_server = build_mcp_server(state)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        async with mcp_server.session_manager.run():
+            yield
+
+    app = FastAPI(title="python-doc-assistant", lifespan=lifespan)
     app.state.shared = state
 
     @app.get("/health")
@@ -129,6 +145,10 @@ def build_app(state: AskState) -> FastAPI:
     @app.post("/api/ask")
     async def ask(request: AskRequest) -> EventSourceResponse:
         return EventSourceResponse(_ask_stream(state, request))
+
+    # MCP server (v4 sub-task 10) — Streamable HTTP at /mcp lets
+    # Claude Code / Codex CLI use this RAG stack as a tool.
+    app.mount("/mcp", mcp_server.streamable_http_app())
 
     # Static mount MUST come after API routes — mount("/") catches every
     # path, so registering it earlier would shadow /health and /api/ask.
