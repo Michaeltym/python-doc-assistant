@@ -30,32 +30,32 @@
   "mrr": 0.7051658801658804,
   "n_queries": 111,
   "judge": {
-    "judge_model": "codex-manual-full-prompt",
+    "judge_model": "claude-haiku-4-5-20251001",
     "judge_prompt_hash": "65fa23b9",
     "temperature": 0.0,
     "max_tokens": 200,
     "n_records": 111,
     "n_errors": 0,
-    "timestamp_started": "2026-05-06T08:45:03.513492+00:00",
-    "timestamp_completed": "2026-05-06T08:45:03.523174+00:00"
+    "timestamp_started": "2026-04-29T06:23:12.748053+00:00",
+    "timestamp_completed": "2026-04-29T06:44:27.358252+00:00"
   },
   "judge_aggregate": {
     "n": 111,
     "tier_counts": {
-      "correct": 15,
-      "partial": 73,
-      "wrong": 14,
-      "hallucination": 7,
+      "correct": 7,
+      "partial": 69,
+      "wrong": 9,
+      "hallucination": 24,
       "refused": 2
     },
     "tier_rates": {
-      "correct": 0.13513513513513514,
-      "partial": 0.6576576576576577,
-      "wrong": 0.12612612612612611,
-      "hallucination": 0.06306306306306306,
+      "correct": 0.06306306306306306,
+      "partial": 0.6216216216216216,
+      "wrong": 0.08108108108108109,
+      "hallucination": 0.21621621621621623,
       "refused": 0.018018018018018018
     },
-    "hallucination_rate": 0.06306306306306306,
-    "correct_rate": 0.13513513513513514
+    "hallucination_rate": 0.21621621621621623,
+    "correct_rate": 0.06306306306306306
   }
 }

@@ -21,8 +21,9 @@ checkpoints below; the doc will be updated as further sub-tasks land.
 | 1 | Refusal calibration (`grounded.py` SYSTEM_REFUSAL + EXAMPLES) | ✅ done (commit `81ff06e`) |
 | 5d | Failure triage script | ✅ done (commit `14c1c37`) |
 | 1' | Code-level query rewriter for typo'd identifiers | ✅ done (commit `01c0597`) |
-| 2 | Retrieval miss recovery (HyDE + comparison decomp + chunker re-cut) | ⏳ next |
-| 4 | Self-verify loop | ⏳ pending |
+| 2 | HyDE retriever + cli `--hyde` flag | ✅ done (commit `ef9c951`) |
+| — | Judge re-evaluation (Haiku 4.5 → Codex CLI) | ✅ done (commit `99964cd`) |
+| 4 | Self-verify loop | ⏸️ deferred (hallucination ≤ 0.01 under Codex judge) |
 | 5b/c | Per-type metrics + refusal F1 | ⏳ pending |
 | 6 | `pdr ask` interactive (already exists; gain `--backend qwen-gguf`) | ✅ wired |
 | 1' | Anti-hallucination prompt (deferred) | ⏸️ deferred |
@@ -40,7 +41,8 @@ checkpoints below; the doc will be updated as further sub-tasks land.
 | inference stack | `llama-cpp-python` (Metal, n_gpu_layers=-1) |
 | context | n_ctx=8192 (bumped from 4096 after dense+rerank prompts overflowed) |
 | decoding | greedy (temperature=0.0, top_p=1.0, max_new_tokens=512) |
-| judge | `claude-haiku-4-5-20251001` (prompt hash `65fa23b9`, same as v2 §6) |
+| judge (original) | `claude-haiku-4-5-20251001` (prompt hash `65fa23b9`, same as v2 §6) |
+| judge (final) | `codex-manual-full-prompt` (Codex CLI internal LLM, GPT-5.5; same prompt hash `65fa23b9`) — see Week 3 |
 | device | M1 Pro 16 GB |
 
 ## Week 0 — 7B Q4 swap (sub-task 3')
@@ -88,8 +90,17 @@ Two retrievers tested on the unmodified `grounded.py` (matches v2
 | Run | retriever | accuracy | halluc | refused | recall@5 |
 |---|---|---:|---:|---:|---:|
 | v2 baseline (Qwen 1.5B transformers) | dense+rerank | 0.685 | 0.216 | 0.018 | 0.838 |
-| v2 §9 follow-up (Claude capacity-class) | dense+rerank | 0.757 | 0.027 | 0.189 | 0.838 |
+| v2 §9 follow-up (GPT-5.5 manual via ChatGPT UI) | dense+rerank | 0.757 | 0.027 | 0.189 | 0.838 |
 | **v4 (Qwen 7B Q4 GGUF)** | dense+rerank | **0.703** | **0.081** | **0.144** | **0.829** |
+
+> ⚠ **The two findings below were written under the Haiku judge and
+> overturned in Week 3.** The Codex re-evaluation found that v2
+> baseline's true accuracy is 0.793 (not 0.685) and hallucination is
+> 0.063 (not 0.216) — Haiku had reclassified ~17 wrong answers as
+> hallucinations. The "Qwen 1.5B → 7B is real" claim and the "Qwen
+> barely refuses at 1.5B" claim are smaller-magnitude effects than
+> these Haiku-judged numbers suggested. See Week 3 §"Numbers under
+> both judges" for the corrected table.
 
 Two findings:
 
@@ -98,9 +109,9 @@ Two findings:
    collapsed from 0.216 to 0.081 (-13.5 pp). This is the largest
    single delta in the whole v4 work plan and it cost half a day of
    coding plus a 5 GB model download.
-2. **7B inherits Claude-class behavior on refusal.** `refused_rate`
+2. **7B inherits GPT-5.5-class behavior on refusal.** `refused_rate`
    jumped from 0.018 (1.5B) to 0.144 (7B) — within the same range as
-   Claude's 0.189 in v2 §9. The "Qwen barely refuses" observation that
+   GPT-5.5's 0.189 in v2 §9. The "Qwen barely refuses" observation that
    underwrote the original Qwen-only revision (and the rationale for
    deleting sub-task 1) was 1.5B-specific. At 7B, sub-task 1 is back
    on the table.
@@ -190,16 +201,16 @@ Notes:
 | v2 §9 baseline | Qwen 1.5B transformers | strict (v1) | dense+rerank | 0.685 |
 | v4 Week 0 | Qwen 7B Q4 GGUF | strict (v1) | dense+rerank | 0.703 (+1.8) |
 | **v4 Week 1** | Qwen 7B Q4 GGUF | **calibrated** | dense+rerank | **0.730 (+4.5)** |
-| Claude follow-up (target) | Claude capacity-class | strict (v1) | dense+rerank | 0.757 |
+| GPT-5.5 follow-up (target) | GPT-5.5 (manual via ChatGPT UI) | strict (v1) | dense+rerank | 0.757 |
 
-The v4 Qwen-only path now sits **2.7 pp below the Claude follow-up**.
+The v4 Qwen-only path now sits **2.7 pp below the GPT-5.5 follow-up**.
 
-## Honest gap analysis (Qwen 7B Q4 vs Claude)
+## Honest gap analysis (Qwen 7B Q4 vs GPT-5.5)
 
 Despite the same accuracy ceiling proximity (`0.730 vs 0.757`), the
 two systems answer very differently:
 
-| Axis | 7B Q4 (calibrated) | Claude follow-up | Gap |
+| Axis | 7B Q4 (calibrated) | GPT-5.5 follow-up | Gap |
 |---|---:|---:|---|
 | `correct_rate` | 0.225 | 0.370 | -14.5 pp (precision) |
 | `partial_rate` | 0.505 | n/a (not in v2 §9 dump) | — |
@@ -207,12 +218,12 @@ two systems answer very differently:
 | `refused_rate` | 0.117 | 0.189 | -7.2 pp |
 
 The 7B model trades precision for coverage: it gives "answer-shaped"
-partial answers more often than Claude (which prefers refusal), but
+partial answers more often than GPT-5.5 (which prefers refusal), but
 3× as many of those answers contain unsupported claims. This matches
 the v3.1 finding that small models are good at the **answer shape**
 but struggle to maintain factual grounding consistently — except that
 v3.1 was 67M and lost grounding hard, while 7B holds it well enough
-for `(correct + partial) / n` to be only ~3 pp behind Claude.
+for `(correct + partial) / n` to be only ~3 pp behind GPT-5.5.
 
 ## Week 2 — sub-task 1 follow-up: prompt R3 (failed) → code rewriter
 
@@ -325,9 +336,9 @@ exists, the rewriter abstains and the model gets the original query
 | v4 Week 1 | Qwen 7B Q4 GGUF | calibrated R1 | – | 0.730 | 0.081 |
 | v4 Week 2 (R3 failed) | Qwen 7B Q4 GGUF | aggressive R3 | – | 0.784 | 0.126 |
 | **v4 Week 2 (rewriter)** | Qwen 7B Q4 GGUF | calibrated R1 | **lev≤2 rewriter** | **0.773** | **0.082** |
-| Claude follow-up (target) | Claude capacity-class | strict (v1) | – | 0.757 | 0.027 |
+| GPT-5.5 follow-up (target) | GPT-5.5 (manual via ChatGPT UI) | strict (v1) | – | 0.757 | 0.027 |
 
-The Qwen-only path now sits 1.6 pp above the Claude follow-up's
+The Qwen-only path now sits 1.6 pp above the GPT-5.5 follow-up's
 accuracy with 3× the hallucination rate, and 0.7 pp short of the v4
 0.78 accuracy target.
 
@@ -348,18 +359,223 @@ accuracy with 3× the hallucination rate, and 0.7 pp short of the v4
    refused_hit5_no cases (real retrieval miss) require different
    fixes. Sub-task 1 owned the first; sub-task 2 owns the second.
 
+## Week 3 — sub-task 2 (HyDE) + judge re-evaluation
+
+Two threads landed in Week 3: a HyDE retriever for sub-task 2, and an
+audit-driven switch of the LLM-as-judge from Haiku 4.5 to a stricter
+GPT-5.5 judge run via Codex CLI. The judge change re-shaped the
+numbers across all five runs and is the larger story.
+
+### HyDE retriever (sub-task 2)
+
+`src/python_doc_assistant/retrieval/hyde.py` (commit `ef9c951`)
+implements the canonical HyDE pipeline (Gao et al., 2022):
+
+1. Classify the query. Skip identifier queries (already in document
+   form) — they go straight to the existing dense+rerank path.
+2. For non-identifier queries, ask the LLM to write a 3-5 sentence
+   hypothetical Python documentation passage that would answer the
+   query.
+3. Embed that hypothetical (not the original query) for dense search.
+4. Rerank the top-N candidates with the **original** query — the
+   cross-encoder scores user intent, not the LLM's invention.
+5. Return rank-ordered chunks; the generator still receives the
+   original query string, only the retrieval input changed.
+
+`QwenHypotheticalGenerator` shares the loaded `Llama` instance with
+`QwenGGUFGenerator` so the 4.7 GB model loads once. The reranker
+guard (rerank-with-original-query) caps downside risk: when the
+hypothetical hallucinates an off-topic API, the cross-encoder still
+scores against user intent and can suppress the wrong chunks. Per-eval
+latency rose from ~14 s/query (rewriter only) to ~14 s/query
+(rewriter + HyDE) — the hypothetical adds ~2 s, but it overlaps with
+batched embedding work.
+
+CLI integration (commit `ef9c951`): new `--hyde` flag on `pdr eval`,
+requires `--backend=qwen-gguf` and `--retriever=dense`. The Generator
+ABC gained explicit `temperature` / `top_p` / `max_new_tokens`
+attributes so the eval CLI can reuse a single QwenGGUFGenerator
+instance for both grounded answering and hypothetical generation.
+
+19 unit tests cover skip-vs-HyDE branching, rerank-with-original-query,
+the disambiguation guard, and the QwenHypotheticalGenerator ABC
+contract.
+
+### HyDE result on n=111 (Haiku judge, before re-evaluation)
+
+(`v4-qwen-gguf-dense-rerank-calib-rewriter-hyde`)
+
+| Metric | Rewriter | Rewriter + HyDE | Δ |
+|---|---:|---:|---:|
+| recall@5 | 0.829 | **0.856** | +2.7 pp |
+| mrr | 0.691 | 0.715 | +2.4 pp |
+
+Recall@5 jumped 2.7 pp — about 3 more queries had the right chunk
+land in top-5. tier-level metrics required the judge step, which
+prompted the audit below before reading them.
+
+### Judge re-evaluation (Haiku 4.5 → Codex CLI)
+
+While preparing the HyDE judge run, the Anthropic-API rate limit on
+the default tier (5 req/min) made re-judging five 111-query runs
+sequentially painful. The discussion shifted to "could we use a
+different judge?", which surfaced two questions worth answering before
+swapping anything: was Haiku applying the rubric correctly in the
+first place, and would a different judge change the cross-run story?
+
+Spot-checking 11 Haiku-vs-rubric mismatches (5 partial→correct
+candidates, 4 hallucination→partial candidates, 2 hallucination→wrong
+candidates) revealed two systematic Haiku biases:
+
+1. **Haiku downgraded prose-correct answers to `partial` when example
+   details were not in the retrieved chunks.** The rubric's KEY rule
+   says: "When the prose is correct, grounding does NOT matter —
+   partial vs correct is decided by citation alone." Haiku
+   consistently penalised extra prose detail (signature explanations,
+   example code) by moving the row from `correct` to `partial`, even
+   when the cite matched the expected symbol exactly.
+2. **Haiku labelled "model used the wrong retrieved chunk" as
+   `hallucination`.** The rubric reserves `hallucination` for prose
+   grounded outside any retrieval (model invented from prior
+   knowledge); answers that built on the wrong retrieved chunk should
+   be `wrong`. Haiku conflated the two, inflating `hallucination` at
+   the expense of `wrong`.
+
+The 5 spot-checked partial-vs-correct rows (e.g. `asyncio.create_task`,
+`functools.lru_cache`, `os.path.join`, `argparse.ArgumentParser`,
+`functools.partial`) all had:
+
+- prose factually correct,
+- cite exactly matching the expected symbol,
+- example details that Haiku flagged as "fabricated" but that were
+  obviously paraphrased from the chunk's signature line.
+
+Per the rubric these are `correct`. Haiku judged `partial` for all
+five.
+
+Both the Codex CLI re-judging pass and a manual rubric check
+classified those 5 rows as `correct`. The 4 hallucination→partial
+rows (e.g. `list vs tuple`, `how to write JSON to a file`) similarly
+all had prose correct + cite mismatched — `partial`, not
+`hallucination`. The 2 hallucination→wrong rows (`abstract base class
+vs Protocol`, `asyncio.gather vs asyncio.wait`) both had the model
+build on a wrong-but-retrieved chunk — `wrong`, not `hallucination`.
+
+Haiku 4.5 is a small judge, and the rubric's KEY rule is exactly the
+kind of nuance a smaller model is more likely to drop. Switching to
+the Codex CLI internal LLM (GPT-5.5, applied with the same
+`make_judge_prompt` payload and same prompt hash `65fa23b9`) yields a
+rubric-faithful pass, at the cost of `judge_model` differing from
+the v2 baseline.
+
+The decision: **adopt the Codex re-evaluation as the primary v4
+numbers, keep the Haiku files as `judge_scores_haiku.jsonl` /
+`results_haiku.json` for historical record.**
+
+### Numbers under both judges (n=111 across all rows)
+
+| Run | Haiku acc | Codex acc | Haiku halluc | Codex halluc |
+|---|---:|---:|---:|---:|
+| v2 baseline (Qwen 1.5B, dense+rerank) | 0.685 | **0.793** | 0.216 | **0.063** |
+| v2 §9 follow-up (GPT-5.5 manual) | 0.757 | n/a (self-bias) | 0.027 | n/a |
+| v4 baseline (Qwen 7B, symbol+bm25) | 0.703 | **0.730** | 0.054 | **0.000** |
+| v4 R1 calibrated (dense+rerank) | 0.730 | **0.775** | 0.081 | **0.009** |
+| v4 R3 prompt | 0.784 | **0.856** | 0.126 | **0.009** |
+| v4 Rewriter | 0.773 | **0.829** | 0.082 | **0.009** |
+| **v4 Rewriter + HyDE** | — | **0.874** | — | **0.009** |
+
+Codex shifts accuracy +2.7 to +7.2 pp depending on the run, and
+collapses hallucination from the 0.05–0.13 range to ~0.009 across
+the board. The directional ordering across runs is preserved
+(baseline < R1 < rewriter < R3 < HyDE), so the per-run diffs that
+drove sub-task decisions are still in the same relative shape.
+
+### Codex-judged tier breakdown
+
+| Run | n | correct | partial | wrong | halluc | refused | accuracy |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline (symbol+bm25) | 111 | 44 (.396) | 37 (.333) | 9 (.081) | 0 (.000) | 21 (.189) | 0.730 |
+| R1 calibrated | 111 | 35 (.315) | 51 (.459) | 11 (.099) | 1 (.009) | 13 (.117) | 0.775 |
+| R3 prompt | 111 | 38 (.342) | 57 (.514) | 10 (.090) | 1 (.009) | 5 (.045) | 0.856 |
+| Rewriter | 111 | 39 (.351) | 53 (.477) | 10 (.090) | 1 (.009) | 8 (.072) | 0.829 |
+| **Rewriter + HyDE** | 111 | **41 (.369)** | **56 (.505)** | 8 (.072) | 1 (.009) | 5 (.045) | **0.874** |
+
+### What changes about earlier sub-task decisions
+
+Three retrospective wrinkles in light of the Codex numbers:
+
+1. **The R3 → rewriter pivot was sound but the precise framing was
+   wrong.** Under Haiku, the case for the rewriter rested on
+   "matches R3's accuracy without R3's hallucination penalty" — the
+   penalty was 0.082 vs 0.126. Under Codex, hallucination is 0.009 in
+   both, and R3 sits 2.7 pp ahead on accuracy. The rewriter is still
+   the better engineering choice (deterministic, prompt-stable, no
+   risk of "any near-match → answer" generalisation under future
+   prompt changes), but the quantitative case needs the engineering
+   argument now, not the hallucination argument.
+2. **The deferred sub-task 4 (self-verify loop) is more deferred.**
+   Under Haiku, hallucination_rate hovered around 0.08 and the v4
+   plan capped it at ≤ 0.10; sub-task 4 was the planned safety net.
+   Under Codex, hallucination is 0.009 across all 5 runs, well below
+   the cap. The self-verify lever is filed as "only consider if a
+   future change reintroduces a hallucination problem".
+3. **The v2 → v4 lift is smaller than originally claimed.** Haiku put
+   v2 Qwen 1.5B at accuracy 0.685 / hallucination 0.216; the entire
+   v4 program looked like a 0.685 → 0.874 lift (+18.9 pp). Under
+   Codex, v2 Qwen 1.5B is actually 0.793 / 0.063 — Haiku had
+   misclassified ~17 of v2's "wrong" answers as hallucinations and
+   undercredited a chunk of partials. The corrected v4 lift is
+   0.793 → 0.874 = **+8.1 pp accuracy** with hallucination already
+   low to begin with (0.063 → 0.009). The 7B swap, the calibration,
+   the rewriter, and HyDE each still moved the needle; the size of
+   the move is just smaller than the headline Haiku numbers
+   advertised.
+
+### Cumulative pipeline lift (Codex judge)
+
+| Stage | Backend | Prompt | Pre-gen rewrite | Retrieval | accuracy | hallucination |
+|---|---|---|---|---|---:|---:|
+| v2 baseline (Qwen 1.5B) | Qwen 1.5B transformers | strict (v1) | – | dense+rerank | 0.793 | 0.063 |
+| v4 Week 0 | Qwen 7B Q4 GGUF | strict (v1) | – | symbol+bm25 | 0.730 | 0.000 |
+| v4 Week 1 | Qwen 7B Q4 GGUF | calibrated R1 | – | dense+rerank | 0.775 | 0.009 |
+| v4 Week 2 (R3 explored) | Qwen 7B Q4 GGUF | aggressive R3 | – | dense+rerank | 0.856 | 0.009 |
+| v4 Week 2 (rewriter) | Qwen 7B Q4 GGUF | calibrated R1 | lev≤2 rewriter | dense+rerank | 0.829 | 0.009 |
+| **v4 Week 3 (HyDE)** | Qwen 7B Q4 GGUF | calibrated R1 | lev≤2 rewriter | dense+rerank+**HyDE** | **0.874** | **0.009** |
+
+Note: v4 Week 0 used `symbol+bm25` (different retriever from v2
+baseline's `dense+rerank`), so the 0.793 → 0.730 row-to-row drop is a
+retriever change, not a regression. The first apples-to-apples
+comparison with v2 baseline is v4 Week 1 (Qwen 7B + calibrated R1,
+dense+rerank) at 0.775 — actually 1.8 pp **below** v2 baseline 0.793,
+because the 7B model's stricter refusal behaviour traded coverage for
+caution before the rewriter was added back. Sub-tasks 1 / 1' / 2
+(rewriter + HyDE) recovered that gap and pushed past it.
+
+Compared to the v4 0.78 accuracy target: rewriter+HyDE is **+9.4 pp
+above target**. Compared to v2 baseline (Qwen 1.5B, dense+rerank,
+Codex-judged at 0.793): rewriter+HyDE adds **+8.1 pp accuracy** and
+takes hallucination from 0.063 to 0.009. The v2 §9 GPT-5.5 (manual)
+follow-up's 0.757 number remains Haiku-graded; re-judging it via
+Codex would be a self-grading exercise (Codex CLI's internal LLM is
+also GPT-5.5), so we keep that number as-is and treat cross-row
+comparisons against it as directional.
+
 ## What's next
 
-- **Sub-task 2 (retrieval miss recovery)** — 8 of the remaining
-  refusals are still `hit_at_5=False`. HyDE + comparison
-  decomposition + chunker re-cut should recover several of those,
-  lifting accuracy further toward and past the 0.78 target.
-- **Sub-task 4 (self-verify loop)** — hallucination_rate is back at
-  0.082, well below the 0.10 cap. Self-verify remains a fallback
-  lever only if sub-task 2's accuracy lift comes with a hallucination
-  cost we cannot pay otherwise.
-- **Sub-task 5b/c (per-type metrics + refusal F1)** — defer until
-  sub-task 2 lands; the per-type story is more interesting once
-  retrieval misses have been triaged separately from refusals.
+- **Sub-task 5b/c (per-type metrics + refusal F1)** — open. With the
+  v4 accuracy target hit and a stable Codex judge across all 5 runs,
+  per-type metrics are the next lever for understanding what's left.
+  In particular: where do the remaining `wrong` rows concentrate
+  (NL queries vs comparison vs how-to)?
+- **Sub-task 4 (self-verify loop)** — deferred indefinitely. Codex
+  judge puts hallucination at 0.009; the original 0.10 cap is no
+  longer binding.
+- **Comparison decomp + chunker re-cut** — the other two sub-task 2
+  levers we considered before HyDE. Open question: would they push
+  past 0.874? The remaining error pool (8 wrong + 5 refused) is
+  small enough that further levers may have diminishing returns.
 
-The v4 narrative will be amended as those sub-tasks land.
+The v4 narrative is closing for now — the Qwen-only path's accuracy
+target is met with margin. Future work folds into v5 / sub-task 5
+territory (per-type analysis, possibly self-verify if hallucination
+ever climbs).
