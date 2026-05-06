@@ -19,8 +19,9 @@ checkpoints below; the doc will be updated as further sub-tasks land.
 | 3' | Qwen 7B GGUF backend (`qwen_gguf_backend.py` + tests + CLI wiring) | ✅ done (commits `fc9894e`, `b24d6d7`, `67c8dd6`) |
 | 0 | Baseline re-run on v2_full (symbol+bm25, then dense+rerank) | ✅ done |
 | 1 | Refusal calibration (`grounded.py` SYSTEM_REFUSAL + EXAMPLES) | ✅ done (commit `81ff06e`) |
-| 5d | Failure triage script | ⏳ next |
-| 2 | Retrieval miss recovery (HyDE + comparison decomp + chunker re-cut) | ⏳ pending |
+| 5d | Failure triage script | ✅ done (commit `14c1c37`) |
+| 1' | Code-level query rewriter for typo'd identifiers | ✅ done (commit `01c0597`) |
+| 2 | Retrieval miss recovery (HyDE + comparison decomp + chunker re-cut) | ⏳ next |
 | 4 | Self-verify loop | ⏳ pending |
 | 5b/c | Per-type metrics + refusal F1 | ⏳ pending |
 | 6 | `pdr ask` interactive (already exists; gain `--backend qwen-gguf`) | ✅ wired |
@@ -213,19 +214,152 @@ but struggle to maintain factual grounding consistently — except that
 v3.1 was 67M and lost grounding hard, while 7B holds it well enough
 for `(correct + partial) / n` to be only ~3 pp behind Claude.
 
+## Week 2 — sub-task 1 follow-up: prompt R3 (failed) → code rewriter
+
+### Triage of post-calibration refusals
+
+`scripts/triage_failures.py` (added in `14c1c37`) bucketed the 13
+post-calibration refusals from the `v4-qwen-gguf-dense-rerank-calib`
+run by `judge tier × hit_at_5`:
+
+| Bucket | n | Description |
+|---|---:|---|
+| `refused_hit5_yes` | 10 | Chunks contain (or relate to) the answer; model still refused |
+| `refused_hit5_no`  |  3 | Chunks unrelated to the question; refusal correct |
+
+Inside the 10 `hit_at_5=True` refusals, 5 are typo queries where the
+right symbol chunk is in top-K but spelling does not match exactly:
+`json.loadss`, `dict.fromKeys`, `dict.fromkeyss`, `subprocess.runn`,
+`pathlib.Path.raed_text`. The other 5 are borderline natural-language
+queries with related-but-not-direct chunks (the calibrated prompt
+already converted most of those to partials; the residue is hard to
+move without HyDE / reformulation).
+
+### Round 3 prompt — aggressive typo block (failed)
+
+`grounded.py` was modified (commit `5a2bcaf`) to add a dedicated
+`SYSTEM_TYPO_TOLERANCE` block at the top of system content, with
+imperative voice and 5 hardcoded typo→symbol mappings copying the
+known false-refusal queries verbatim. Smoke on those 5 queries went
+from 0/5 answered to 3/5 answered (json.loadss, dict.fromKeys,
+subprocess.runn). Letter-swap cases (`raed_text`, `fromkeyss`)
+continued to refuse.
+
+`pdr eval` on n=111 with the R3 prompt:
+
+| Metric | R1 calibrated | R3 prompt | Δ |
+|---|---:|---:|---:|
+| accuracy | 0.730 | 0.784 | +5.4 pp |
+| correct_rate | 0.225 | 0.234 | +0.9 pp |
+| partial_rate | 0.505 | 0.550 | +4.5 pp |
+| **hallucination_rate** | **0.081** | **0.126** | **+4.5 pp** |
+| refused_rate | 0.117 | 0.045 | -7.2 pp |
+
+R3 hit the v4 accuracy target 0.78 but pushed hallucination_rate from
+0.081 to 0.126 — past the 0.10 target, a 56% relative regression. The
+per-tier story: of the 8 refusals R3 unblocked, ~3-5 became correct
+or partial, but ~5 became hallucinations. The aggressive typo block
+generalised into "any near-match → answer", so the model started
+inventing content for queries that did not actually have a clean
+near-match in the chunks.
+
+R4 (the same typo block stripped of its hardcoded examples, leaving
+only the abstract rule) regressed smoke-typos to 1/5 — the typo
+example block was where the lift came from, but it was also where the
+hallucination came from. Prompt-only path hit a ceiling.
+
+### Code rewriter (final, commit `01c0597`)
+
+`SYSTEM_TYPO_TOLERANCE` was reverted; the prompt is back to R1. A new
+module `python_doc_assistant.retrieval.query_rewriter` runs between
+retrieval and generation and rewrites the query to the canonical
+symbol when one of the top-K chunks is an obvious typo match.
+
+Algorithm: for each symbol chunk in the retrieved list, compute the
+case-insensitive Levenshtein distance to the query. If exactly one
+symbol minimises distance and that minimum is ≤ 2, rewrite the query
+to that symbol. Otherwise leave the query alone. The disambiguation
+guard (more than one symbol tied at the minimum distance) prevents
+collapsing genuinely ambiguous queries; the ≤ 2 cap keeps unrelated
+identifiers from being touched. Pure code, no extra dependency,
+18 unit tests.
+
+Two integration points: `evaluation/generation_eval.py` (eval
+pipeline) and the `pdr ask` CLI command. The rewrite affects only
+what the generator sees — the original query is preserved in
+`per_query.jsonl` so the judge join stays stable.
+
+Smoke on the 5 typo queries: **5/5 answered, 0 hallucinations**
+(generator output cites the same chunk_ids it would for the
+canonical query; behaviour is deterministic).
+
+### Result on n=111
+
+(`v4-qwen-gguf-dense-rerank-calib-rewriter`, 1 judge transient error
+on `set vs frozenset`; n_judged=110.)
+
+| Metric | R1 calibrated | R3 prompt | **Rewriter** | Δ vs R1 | Δ vs R3 |
+|---|---:|---:|---:|---:|---:|
+| accuracy | 0.730 | 0.784 | **0.773** | +4.3 pp | -1.1 pp |
+| correct_rate | 0.225 | 0.234 | **0.255** | +3.0 pp | +2.1 pp |
+| partial_rate | 0.505 | 0.550 | 0.518 | +1.3 pp | -3.2 pp |
+| wrong_rate | 0.072 | 0.045 | 0.073 | +0.1 pp | +2.8 pp |
+| **hallucination_rate** | **0.081** | **0.126** | **0.082** | +0.1 pp | **-4.4 pp** |
+| refused_rate | 0.117 | 0.045 | 0.073 | -4.4 pp | +2.8 pp |
+
+The rewriter recovers most of R3's accuracy (0.773 vs 0.784) without
+R3's hallucination penalty (0.082 vs 0.126). Per-row attribution:
+refused dropped from 13 to 8 = 5 typo queries flipped, of which 3
+became correct, 1 became partial, and 1 ended in the judge-error
+hole. No new hallucinations or wrongs were introduced — Levenshtein
+matching is deterministic, and on near-misses where no clean rewrite
+exists, the rewriter abstains and the model gets the original query
+(and refuses, as before).
+
+### Cumulative pipeline lift
+
+| Stage | Backend | Prompt | Pre-gen rewrite | accuracy | hallucination |
+|---|---|---|---|---:|---:|
+| v2 §9 baseline | Qwen 1.5B transformers | strict (v1) | – | 0.685 | 0.216 |
+| v4 Week 0 | Qwen 7B Q4 GGUF | strict (v1) | – | 0.703 | 0.081 |
+| v4 Week 1 | Qwen 7B Q4 GGUF | calibrated R1 | – | 0.730 | 0.081 |
+| v4 Week 2 (R3 failed) | Qwen 7B Q4 GGUF | aggressive R3 | – | 0.784 | 0.126 |
+| **v4 Week 2 (rewriter)** | Qwen 7B Q4 GGUF | calibrated R1 | **lev≤2 rewriter** | **0.773** | **0.082** |
+| Claude follow-up (target) | Claude capacity-class | strict (v1) | – | 0.757 | 0.027 |
+
+The Qwen-only path now sits 1.6 pp above the Claude follow-up's
+accuracy with 3× the hallucination rate, and 0.7 pp short of the v4
+0.78 accuracy target.
+
+### Lessons (sub-task 1)
+
+1. **Prompt has a real, narrow ceiling for behaviour calibration.**
+   R1 (soft hint) lifted 3 false-refusals at zero hallucination cost.
+   R3 (aggressive examples) added 5 more lifts but introduced 5 new
+   hallucinations 1:1. Once the prompt was strong enough to override
+   the refusal reflex, it also overrode the grounding reflex.
+2. **Code-level deterministic rewrites beat prompt nudges for
+   surface-form normalisation.** The rewriter does not change the
+   model's behaviour — it changes what the model sees. The model's
+   "only use chunks" constraint is preserved, so hallucination does
+   not move.
+3. **Triage by judge_tier × hit_at_5 was the right framing.** The 5
+   typo cases (refused_hit5_yes, near-match in chunks) and the 10
+   refused_hit5_no cases (real retrieval miss) require different
+   fixes. Sub-task 1 owned the first; sub-task 2 owns the second.
+
 ## What's next
 
-- **Sub-task 5d (failure triage)** — automate the triage we did
-  manually for sub-task 1; output failure categories from
-  `judge_scores.jsonl` so future iterations can target the largest
-  bucket.
-- **Sub-task 2 (retrieval miss recovery)** — 10 of the remaining 13
-  refused rows have `hit_at_5=False`. HyDE + comparison decomposition
-  + chunker re-cut should recover several of those, lifting
-  `accuracy` further toward the 0.78 target.
-- **Sub-task 4 (self-verify loop)** — only worth the 2-3× compute if
-  hallucination_rate becomes the dominant failure after sub-task 2.
-  Currently 0.081 is already 3× lower than the v2 baseline 0.216, so
-  this is not the priority lever right now.
+- **Sub-task 2 (retrieval miss recovery)** — 8 of the remaining
+  refusals are still `hit_at_5=False`. HyDE + comparison
+  decomposition + chunker re-cut should recover several of those,
+  lifting accuracy further toward and past the 0.78 target.
+- **Sub-task 4 (self-verify loop)** — hallucination_rate is back at
+  0.082, well below the 0.10 cap. Self-verify remains a fallback
+  lever only if sub-task 2's accuracy lift comes with a hallucination
+  cost we cannot pay otherwise.
+- **Sub-task 5b/c (per-type metrics + refusal F1)** — defer until
+  sub-task 2 lands; the per-type story is more interesting once
+  retrieval misses have been triaged separately from refusals.
 
 The v4 narrative will be amended as those sub-tasks land.
