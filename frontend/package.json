@@ -5,22 +5,39 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "format": "prettier --write 'src/**/*.{ts,tsx,css}' '*.{ts,json,html}'",
+    "format:check": "prettier --check 'src/**/*.{ts,tsx,css}' '*.{ts,json,html}'"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@types/node": "^24.6.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.21",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^15.14.0",
     "postcss": "^8.5.6",
+    "prettier": "^3.4.2",
     "tailwindcss": "^3.4.18",
     "typescript": "^5.9.0",
+    "typescript-eslint": "^8.20.0",
     "vite": "^6.4.0"
   }
 }

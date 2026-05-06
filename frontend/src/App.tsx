@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
-import { ChatBox } from "./components/ChatBox";
+import { useCallback, useRef, useState } from "react";
+import { ChatBox, type ChatBoxHandle } from "./components/ChatBox";
+import { HeaderBar } from "./components/HeaderBar";
 import { MessageList } from "./components/MessageList";
 import { useAsk } from "./hooks/useAsk";
 import type { DonePayload, Message } from "./types";
@@ -11,6 +12,8 @@ function makeId() {
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const { ask, cancel, inFlight } = useAsk();
+  const chatRef = useRef<ChatBoxHandle>(null);
+  const docsVersion = import.meta.env.VITE_DOCS_VERSION ?? "3.12";
 
   const handleSubmit = useCallback(
     (query: string) => {
@@ -24,46 +27,39 @@ export default function App() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
       const updateAssistant = (patch: Partial<Message>) => {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantMsg.id ? { ...m, ...patch } : m)),
-        );
+        setMessages((prev) => prev.map((m) => (m.id === assistantMsg.id ? { ...m, ...patch } : m)));
       };
 
       void ask(
         { query },
         {
-          onToken: (text) => {
-            updateAssistant({ text });
-          },
-          onDone: (meta: DonePayload) => {
-            updateAssistant({ meta, streaming: false });
-          },
-          onError: (message) => {
+          onToken: (text) => updateAssistant({ text }),
+          onDone: (meta: DonePayload) => updateAssistant({ meta, streaming: false }),
+          onError: (message) =>
             updateAssistant({
               text: `Error: ${message}`,
               errored: true,
               streaming: false,
-            });
-          },
+            }),
         },
       );
     },
     [ask],
   );
 
+  const handlePickSuggestion = useCallback((q: string) => {
+    chatRef.current?.setValue(q);
+  }, []);
+
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col">
-      <header className="border-b border-zinc-800 px-4 py-3">
-        <h1 className="text-lg font-semibold">python-doc-assistant</h1>
-        <p className="text-xs text-zinc-500">
-          Grounded Q&amp;A over the Python {import.meta.env.VITE_DOCS_VERSION ?? "3.12"}{" "}
-          standard library docs. Answers cite the chunks they used.
-        </p>
-      </header>
-      <main className="flex-1 overflow-y-auto px-4">
-        <MessageList messages={messages} />
+    <div className="flex h-full flex-col">
+      <HeaderBar docsVersion={docsVersion} />
+      <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4">
+        <MessageList messages={messages} onPickSuggestion={handlePickSuggestion} />
       </main>
-      <ChatBox onSubmit={handleSubmit} disabled={inFlight} onCancel={cancel} />
+      <div className="mx-auto w-full max-w-3xl">
+        <ChatBox inputRef={chatRef} onSubmit={handleSubmit} disabled={inFlight} onCancel={cancel} />
+      </div>
     </div>
   );
 }
