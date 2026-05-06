@@ -442,4 +442,4 @@ local CLI. Possible v5 directions, none currently active:
 
 ## License
 
-Not yet declared. Add a `LICENSE` file before publishing.
+MIT — see [`LICENSE`](LICENSE).
