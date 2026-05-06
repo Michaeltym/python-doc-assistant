@@ -51,7 +51,15 @@ class Generator(ABC):
 
     Subclasses must override `generate()`. The CLI and eval code depend
     only on this interface, so swapping backends is a one-line change.
+
+    Instance attributes (subclasses set these in `__init__` so the eval
+    pipeline can record decoding params per run):
+        temperature, top_p, max_new_tokens.
     """
+
+    temperature: float
+    top_p: float
+    max_new_tokens: int
 
     @abstractmethod
     def generate(

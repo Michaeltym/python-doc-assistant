@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -33,6 +33,10 @@ from python_doc_assistant.ingest.chunker import Chunk, build_chunks
 from python_doc_assistant.ingest.fetch_docs import ingest_docs
 from python_doc_assistant.ingest.parse_objects_inv import SymbolEntry, parse_objects_inv
 from python_doc_assistant.retrieval.router import route
+
+if TYPE_CHECKING:
+    from python_doc_assistant.generation.interface import Generator
+    from python_doc_assistant.retrieval.hyde import HypotheticalGenerator
 
 # ------------------------------------------------------------------
 # Constants
@@ -318,7 +322,6 @@ def ask(
     retrieve_fn = _make_retrieve_fn(symbol_index, bm25_index, chunks_by_id)
     retrieved = retrieve_fn(query, k)
     gen_chunks = [chunks_by_id[r.chunk_id] for r in retrieved if r.chunk_id in chunks_by_id]
-    from python_doc_assistant.generation.interface import Generator
     from python_doc_assistant.prompts.grounded import build_grounded_prompt
     from python_doc_assistant.retrieval.query_rewriter import maybe_rewrite_query
     from python_doc_assistant.retrieval.router import classify
@@ -708,6 +711,12 @@ def judge_cmd(
     is_flag=True,
     help="Force overwrite if the run directory already exists.",
 )
+@click.option(
+    "--hyde",
+    is_flag=True,
+    default=False,
+    help="Enable HyDE preprocessing (requires --backend=qwen-gguf + --retriever=dense).",
+)
 def eval_cmd(
     set_path: Path,
     tag: str,
@@ -722,6 +731,7 @@ def eval_cmd(
     backend: str,
     gguf_model_path: str | None,
     overwrite: bool,
+    hyde: bool,
 ) -> None:
     """Run eval set against persisted indexes; write results.json + per_query.jsonl.
 
@@ -770,6 +780,26 @@ def eval_cmd(
     eval_queries = load_eval_set(set_path)
 
     chunks_by_id = {chunk.chunk_id: chunk for chunk in chunks}
+
+    if backend == "qwen-gguf" and gguf_model_path is None:
+        raise click.UsageError("--backend=qwen-gguf requires --gguf-model")
+    if hyde and backend != "qwen-gguf":
+        raise click.UsageError("--hyde requires --backend=qwen-gguf")
+    if hyde and not rerank:
+        click.echo(
+            "warning: --hyde without --rerank loses the original-query rerank safety net",
+            err=True,
+        )
+
+    generator: Generator | None = None
+    hypothetical_generator: HypotheticalGenerator | None = None
+    if hyde and backend == "qwen-gguf" and gguf_model_path is not None:
+        from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
+        from python_doc_assistant.retrieval.hyde import QwenHypotheticalGenerator
+
+        generator = QwenGGUFGenerator(model_path=Path(gguf_model_path))
+        hypothetical_generator = QwenHypotheticalGenerator(generator.llm)
+
     retrieve_fn = _build_eval_retrieve_fn(
         retriever=retriever,
         chunks=chunks,
@@ -781,9 +811,9 @@ def eval_cmd(
         alpha=alpha,
         rerank=rerank,
         rerank_candidates=rerank_candidates,
+        hyde=hyde,
+        hypothetical_generator=hypothetical_generator,
     )
-    if backend == "qwen-gguf" and gguf_model_path is None:
-        raise click.UsageError("--backend=qwen-gguf requires --gguf-model")
     run_result, model_field, decoding_params = _run_eval_with_optional_generation(
         eval_queries=eval_queries,
         retrieve_fn=retrieve_fn,
@@ -792,6 +822,7 @@ def eval_cmd(
         model_id=model_id,
         backend=backend,
         gguf_model_path=gguf_model_path,
+        generator=generator,
     )
 
     manifest = _load_ingest_manifest(docs_dir)
@@ -968,6 +999,8 @@ def _build_eval_retrieve_fn(
     alpha: float,
     rerank: bool,
     rerank_candidates: int,
+    hyde: bool,
+    hypothetical_generator: HypotheticalGenerator | None,
 ) -> Callable[[str, int], list[RetrievedChunk]]:
     """Wire the retrieval factory for `eval_cmd` (v2 §5 prereq).
 
@@ -1017,6 +1050,7 @@ def _build_eval_retrieve_fn(
     needs_symbol = retriever == "symbol+bm25"
     dense_index = None
     reranker = None
+
     if needs_dense:
         from python_doc_assistant.indexes.dense_index import DenseIndex
 
@@ -1028,6 +1062,22 @@ def _build_eval_retrieve_fn(
         reranker = CrossEncoderReranker()
     from python_doc_assistant.retrieval.factory import build_retrieve_fn
 
+    if hyde:
+        from python_doc_assistant.retrieval.hyde import make_hyde_retrieve_fn
+
+        if retriever != "dense":
+            raise click.UsageError("--hyde requires --retriever=dense")
+        if hypothetical_generator is None:
+            raise click.UsageError("--hyde requires hypothetical_generator")
+        assert dense_index is not None  # retriever=="dense" → loaded above
+
+        return make_hyde_retrieve_fn(
+            dense_index=dense_index,
+            chunks_by_id=chunks_by_id,
+            hypothetical_generator=hypothetical_generator,
+            reranker=reranker,
+            rerank_candidates=rerank_candidates,
+        )
     return build_retrieve_fn(
         retriever=retriever,
         chunks_by_id=chunks_by_id,
@@ -1049,6 +1099,7 @@ def _run_eval_with_optional_generation(
     model_id: str | None,
     backend: str = "qwen",
     gguf_model_path: str | None = None,
+    generator: Generator | None = None,
 ) -> tuple[EvalRunResult, str | None, dict[str, Any] | None]:
     """Dispatch retrieval-only vs retrieval+generation eval.
 
@@ -1063,19 +1114,31 @@ def _run_eval_with_optional_generation(
           and gguf_model_path is set; model_field returns the GGUF
           filename for reproducibility.
 
+    `generator` argument: when the caller has already built a Generator
+    (e.g. the HyDE path needs to share the same Llama instance with
+    `QwenHypotheticalGenerator`), pass it in to avoid double-loading the
+    4.7 GB Qwen GGUF. When None, the function builds one based on
+    `backend` + `model_id` / `gguf_model_path`.
+
     Splitting this out keeps `eval_cmd` body small and lets tests cover
     the dispatch without spinning up a real model.
     """
-    if backend == "qwen" and model_id is None:
+    if backend == "qwen" and model_id is None and generator is None:
         run_result = evaluate(eval_queries, retrieve_fn, max_k=max_k)
         return run_result, None, None
 
     from python_doc_assistant.evaluation.generation_eval import evaluate_with_generation
-    from python_doc_assistant.generation.interface import Generator
 
-    generator: Generator
     model_field: str
-    if backend == "qwen-gguf":
+    if generator is not None:
+        if backend == "qwen-gguf":
+            assert gguf_model_path is not None
+            model_field = Path(gguf_model_path).name
+        elif model_id is not None:
+            model_field = model_id
+        else:
+            model_field = ""
+    elif backend == "qwen-gguf":
         if gguf_model_path is None:
             raise ValueError("backend='qwen-gguf' requires gguf_model_path")
         from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
