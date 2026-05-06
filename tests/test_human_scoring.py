@@ -22,9 +22,7 @@ from python_doc_assistant.evaluation.human_scoring import (
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:
     """Write JSONL fixture; one record per line."""
-    path.write_text(
-        "\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8"
-    )
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
 
 
 # ------------------------------------------------------------------
@@ -34,9 +32,7 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 
 def test_valid_tiers_exact_set() -> None:
     """Plan §6 4-tier + 'refused' for the marker-emitting case."""
-    assert VALID_TIERS == frozenset(
-        {"correct", "partial", "wrong", "hallucination", "refused"}
-    )
+    assert VALID_TIERS == frozenset({"correct", "partial", "wrong", "hallucination", "refused"})
 
 
 def test_human_score_is_frozen() -> None:

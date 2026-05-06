@@ -424,15 +424,17 @@ def _stub_judge_one(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         **kwargs: Any,
     ) -> JudgeRecord:
         # Mirror real judge_one: 6 positional + keyword-only client/model_id/etc.
-        captured["calls"].append({
-            "query": query,
-            "expected_symbols": expected_symbols,
-            "retrieved_chunks": retrieved_chunks,
-            "cited_chunk_ids": cited_chunk_ids,
-            "refused": refused,
-            "model_output_text": model_output_text,
-            **kwargs,
-        })
+        captured["calls"].append(
+            {
+                "query": query,
+                "expected_symbols": expected_symbols,
+                "retrieved_chunks": retrieved_chunks,
+                "cited_chunk_ids": cited_chunk_ids,
+                "refused": refused,
+                "model_output_text": model_output_text,
+                **kwargs,
+            }
+        )
         return JudgeRecord(
             query=query,
             tier="correct",
@@ -483,11 +485,7 @@ def test_cli_judge_writes_judge_scores_jsonl(
     # judge_scores.jsonl created
     judge_path = run_dir / "judge_scores.jsonl"
     assert judge_path.exists()
-    records = [
-        _json.loads(line)
-        for line in judge_path.read_text().splitlines()
-        if line.strip()
-    ]
+    records = [_json.loads(line) for line in judge_path.read_text().splitlines() if line.strip()]
     assert len(records) == 1
     assert records[0]["query"] == "pathlib.Path.read_text"
     assert records[0]["tier"] == "correct"
@@ -543,22 +541,24 @@ def test_cli_judge_max_rows_caps_judge_calls(
     pq_path = run_dir / "per_query.jsonl"
     extra = []
     for i in range(2, 6):
-        extra.append({
-            "query": f"q{i}",
-            "query_type": "identifier",
-            "match_policy": "any",
-            "url_match": "strip_anchor",
-            "expected_symbols": [],
-            "expected_urls": [],
-            "retrieved": [],
-            "hit_at_5": False,
-            "hit_at_10": False,
-            "rank_for_mrr": None,
-            "model_output_text": "x",
-            "cited_chunk_ids": [],
-            "refused": False,
-            "generation_latency_seconds": 1.0,
-        })
+        extra.append(
+            {
+                "query": f"q{i}",
+                "query_type": "identifier",
+                "match_policy": "any",
+                "url_match": "strip_anchor",
+                "expected_symbols": [],
+                "expected_urls": [],
+                "retrieved": [],
+                "hit_at_5": False,
+                "hit_at_10": False,
+                "rank_for_mrr": None,
+                "model_output_text": "x",
+                "cited_chunk_ids": [],
+                "refused": False,
+                "generation_latency_seconds": 1.0,
+            }
+        )
     with pq_path.open("a", encoding="utf-8") as f:
         for r in extra:
             f.write(_json.dumps(r) + "\n")
@@ -591,10 +591,15 @@ def test_cli_judge_passes_decoding_overrides(
     result = runner.invoke(
         main,
         [
-            "judge", "--run-dir", str(run_dir),
-            "--judge-model", "claude-sonnet-4-5",
-            "--temperature", "0.2",
-            "--max-tokens", "300",
+            "judge",
+            "--run-dir",
+            str(run_dir),
+            "--judge-model",
+            "claude-sonnet-4-5",
+            "--temperature",
+            "0.2",
+            "--max-tokens",
+            "300",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -609,9 +614,7 @@ def test_cli_judge_passes_decoding_overrides(
 # ------------------------------------------------------------------
 
 
-def test_cli_build_index_with_dense_flag(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cli_build_index_with_dense_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """--with-dense triggers DenseIndex(chunks).save(<.../dense.npy>)."""
     saved: list[Path] = []
 
@@ -637,9 +640,7 @@ def test_cli_build_index_with_dense_flag(
         f"{CLI_MODULE}.build_chunks",
         lambda *_args, **_kwargs: [_symbol_chunk("pathlib.Path.read_text")],
     )
-    monkeypatch.setattr(
-        "python_doc_assistant.indexes.dense_index.DenseIndex", _StubDenseIndex
-    )
+    monkeypatch.setattr("python_doc_assistant.indexes.dense_index.DenseIndex", _StubDenseIndex)
 
     runner = CliRunner()
     result = runner.invoke(main, ["build-index", "--with-dense"])
@@ -763,10 +764,16 @@ def test_cli_eval_rerank_flag_threads_through(
     result = runner.invoke(
         main,
         [
-            "eval", "--set", str(eval_path), "--tag", "v2-rerank",
-            "--retriever", "hybrid-rrf",
+            "eval",
+            "--set",
+            str(eval_path),
+            "--tag",
+            "v2-rerank",
+            "--retriever",
+            "hybrid-rrf",
             "--rerank",
-            "--rerank-candidates", "30",
+            "--rerank-candidates",
+            "30",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -803,9 +810,15 @@ def test_cli_eval_alpha_flag_threads_through(
     result = runner.invoke(
         main,
         [
-            "eval", "--set", str(eval_path), "--tag", "v2-linear",
-            "--retriever", "hybrid-linear",
-            "--alpha", "0.7",
+            "eval",
+            "--set",
+            str(eval_path),
+            "--tag",
+            "v2-linear",
+            "--retriever",
+            "hybrid-linear",
+            "--alpha",
+            "0.7",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -881,15 +894,11 @@ def _ask_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _StubAskGener
         stub.model_id = model_id
         return stub
 
-    monkeypatch.setattr(
-        "python_doc_assistant.generation.qwen_backend.QwenGenerator", factory
-    )
+    monkeypatch.setattr("python_doc_assistant.generation.qwen_backend.QwenGenerator", factory)
     return stub
 
 
-def test_cli_ask_prints_answer_text(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cli_ask_prints_answer_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Without --debug, only the model's answer text is printed."""
     stub = _ask_setup(monkeypatch, tmp_path)
     stub.text = "The read_text method returns the file contents [1]."
@@ -915,9 +924,7 @@ def test_cli_ask_refused_prints_refusal_marker(
     assert "[INSUFFICIENT-CONTEXT]" in result.output
 
 
-def test_cli_ask_passes_model_id_through(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cli_ask_passes_model_id_through(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """--model flag reaches QwenGenerator constructor."""
     stub = _ask_setup(monkeypatch, tmp_path)
 
@@ -1170,18 +1177,14 @@ def test_cli_eval_with_model_dispatches_to_generation_path(
     )
 
     captured: dict[str, Any] = {}
-    canned_run = EvalRunResult(
-        queries=(), recall_at_5=0.0, recall_at_10=0.0, mrr=0.0, n_queries=0
-    )
+    canned_run = EvalRunResult(queries=(), recall_at_5=0.0, recall_at_10=0.0, mrr=0.0, n_queries=0)
     canned_decoding = {"temperature": 0.0, "top_p": 1.0, "max_new_tokens": 512}
 
     def fake_dispatch(**kwargs: Any) -> Any:
         captured.update(kwargs)
         return canned_run, kwargs["model_id"], canned_decoding
 
-    monkeypatch.setattr(
-        f"{CLI_MODULE}._run_eval_with_optional_generation", fake_dispatch
-    )
+    monkeypatch.setattr(f"{CLI_MODULE}._run_eval_with_optional_generation", fake_dispatch)
 
     runner = CliRunner()
     result = runner.invoke(

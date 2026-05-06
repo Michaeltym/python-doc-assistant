@@ -158,11 +158,11 @@ def train_tinydocs(
     n_segments = len(dataset)  # type: ignore[arg-type]
     total_corpus_tokens = n_segments * seq_len
     total_train_tokens = tokens_per_step * train_config.total_steps
-    epochs_planned = (
-        total_train_tokens / total_corpus_tokens if total_corpus_tokens else 0.0
+    epochs_planned = total_train_tokens / total_corpus_tokens if total_corpus_tokens else 0.0
+    print(
+        f"[{_now_clock()}] model: {_fmt_count(n_params)} params  "
+        f"(vocab {_fmt_count(model_config.vocab_size)} + transformer)"
     )
-    print(f"[{_now_clock()}] model: {_fmt_count(n_params)} params  "
-          f"(vocab {_fmt_count(model_config.vocab_size)} + transformer)")
     print(
         f"[{_now_clock()}] device={train_config.device}  "
         f"batch={train_config.batch_size}  seq_len={seq_len}  "
@@ -227,9 +227,7 @@ def train_tinydocs(
                         else 0.0
                     )
                     eta = (
-                        (train_config.total_steps - step) / rolling_rate
-                        if rolling_rate > 0
-                        else 0
+                        (train_config.total_steps - step) / rolling_rate if rolling_rate > 0 else 0
                     )
                     pct = 100 * step / train_config.total_steps
                     losses_recent.append(loss.item())
@@ -253,9 +251,7 @@ def train_tinydocs(
                     if losses_recent:
                         loss_mean = statistics.mean(losses_recent)
                         loss_stdev = (
-                            statistics.stdev(losses_recent)
-                            if len(losses_recent) > 1
-                            else 0.0
+                            statistics.stdev(losses_recent) if len(losses_recent) > 1 else 0.0
                         )
                     else:
                         loss_mean = loss_stdev = 0.0
@@ -267,24 +263,15 @@ def train_tinydocs(
                         else 0.0
                     )
                     eta = (
-                        (train_config.total_steps - step) / rolling_rate
-                        if rolling_rate > 0
-                        else 0
+                        (train_config.total_steps - step) / rolling_rate if rolling_rate > 0 else 0
                     )
-                    finish_at = (
-                        datetime.now() + timedelta(seconds=eta)
-                    ).strftime("%Y-%m-%d %H:%M")
+                    finish_at = (datetime.now() + timedelta(seconds=eta)).strftime("%Y-%m-%d %H:%M")
                     tokens_seen = step * tokens_per_step
                     epoch_pct = (
-                        100 * tokens_seen / total_corpus_tokens
-                        if total_corpus_tokens
-                        else 0.0
+                        100 * tokens_seen / total_corpus_tokens if total_corpus_tokens else 0.0
                     )
                     print()
-                    print(
-                        f"=== milestone step {step}/{train_config.total_steps} "
-                        f"({pct:.2f} %) ==="
-                    )
+                    print(f"=== milestone step {step}/{train_config.total_steps} ({pct:.2f} %) ===")
                     print(
                         f"  loss recent {len(losses_recent) * train_config.log_every}: "
                         f"mean={loss_mean:.3f}  stdev={loss_stdev:.3f}"
@@ -312,9 +299,7 @@ def train_tinydocs(
                 step += 1
                 if step >= train_config.total_steps:
                     break
-            print(
-                f"[{_now_clock()}] === epoch {epoch + 1} complete (step {step}) ==="
-            )
+            print(f"[{_now_clock()}] === epoch {epoch + 1} complete (step {step}) ===")
             epoch += 1
 
     final_path = ckpt_dir / "step_final.pt"

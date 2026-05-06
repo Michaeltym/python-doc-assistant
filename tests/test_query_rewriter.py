@@ -98,10 +98,7 @@ def test_rewrite_letter_swap_distance_two() -> None:
         _symbol_chunk("pathlib.Path.read_text"),
         _symbol_chunk("io.IOBase.read"),
     ]
-    assert (
-        maybe_rewrite_query("pathlib.Path.raed_text", chunks)
-        == "pathlib.Path.read_text"
-    )
+    assert maybe_rewrite_query("pathlib.Path.raed_text", chunks) == "pathlib.Path.read_text"
 
 
 # ------------------------------------------------------------------

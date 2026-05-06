@@ -114,9 +114,7 @@ def test_qwen_is_a_generator_subclass() -> None:
 def test_generate_returns_answer_with_text_and_citations() -> None:
     """[N] numeric citations are mapped back to chunk_ids using retrieved order."""
     gen = _StubQwenGenerator(canned_response="Use [1] then [2].")
-    answer = gen.generate(
-        "how to foo?", [_chunk("symbol:foo"), _chunk("symbol:bar")]
-    )
+    answer = gen.generate("how to foo?", [_chunk("symbol:foo"), _chunk("symbol:bar")])
     assert isinstance(answer, Answer)
     assert "[1]" in answer.text
     assert answer.cited_chunk_ids == ("symbol:foo", "symbol:bar")

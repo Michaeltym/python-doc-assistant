@@ -81,9 +81,7 @@ class _StubCrossEncoder:
         self.last_batch_size = batch_size
         scores = []
         for _, doc in pair_list:
-            scores.append(
-                self._scores.get(doc, (hash(doc) % 1000) / 1000.0)
-            )
+            scores.append(self._scores.get(doc, (hash(doc) % 1000) / 1000.0))
         return np.array(scores, dtype=np.float32) if convert_to_numpy else scores
 
 

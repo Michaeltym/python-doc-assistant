@@ -95,10 +95,7 @@ class _StubReranker:
         batch_size: int = 32,
     ) -> list[RerankedHit]:
         self.rerank_calls.append((query, chunks, top_k))
-        scored = [
-            RerankedHit(chunk_id=c.chunk_id, score=float(self._score_fn(c)))
-            for c in chunks
-        ]
+        scored = [RerankedHit(chunk_id=c.chunk_id, score=float(self._score_fn(c))) for c in chunks]
         return sorted(scored, key=lambda h: -h.score)[:top_k]
 
 
@@ -139,9 +136,7 @@ def test_dense_without_index_raises() -> None:
 
 def test_hybrid_rrf_without_indexes_raises() -> None:
     with pytest.raises(ValueError):
-        build_retrieve_fn(
-            retriever="hybrid-rrf", chunks_by_id={}, bm25_index=_StubBM25Index()
-        )
+        build_retrieve_fn(retriever="hybrid-rrf", chunks_by_id={}, bm25_index=_StubBM25Index())
 
 
 def test_symbol_bm25_without_symbol_index_raises() -> None:
@@ -347,14 +342,16 @@ def test_rerank_fetches_rerank_candidates_from_inner() -> None:
 def test_rerank_returns_top_k_after_rerank() -> None:
     """Final output is what the reranker returned, capped at k."""
     bm25 = _StubBM25Index(
-        {"q": [BM25Hit(chunk_id="c1", score=10.0),
-               BM25Hit(chunk_id="c2", score=8.0),
-               BM25Hit(chunk_id="c3", score=5.0)]}
+        {
+            "q": [
+                BM25Hit(chunk_id="c1", score=10.0),
+                BM25Hit(chunk_id="c2", score=8.0),
+                BM25Hit(chunk_id="c3", score=5.0),
+            ]
+        }
     )
     # Reranker flips the order: c3 > c1 > c2
-    reranker = _StubReranker(
-        score_fn=lambda c: {"c1": 0.5, "c2": 0.1, "c3": 0.9}[c.chunk_id]
-    )
+    reranker = _StubReranker(score_fn=lambda c: {"c1": 0.5, "c2": 0.1, "c3": 0.9}[c.chunk_id])
     fn = build_retrieve_fn(
         retriever="bm25",
         chunks_by_id=_chunks_dict(["c1", "c2", "c3"]),

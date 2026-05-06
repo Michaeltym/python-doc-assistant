@@ -225,9 +225,7 @@ def test_evaluate_with_generation_preserves_retrieval_metrics() -> None:
     chunks_by_id = {"symbol:pathlib.Path.read_text": _chunk()}
     gen = _StubGenerator()
 
-    result = evaluate_with_generation(
-        eval_queries, retrieve_fn, gen, chunks_by_id
-    )
+    result = evaluate_with_generation(eval_queries, retrieve_fn, gen, chunks_by_id)
 
     assert result.n_queries == 1
     assert result.recall_at_5 == 1.0  # retrieved chunk matches expected_symbols

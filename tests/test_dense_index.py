@@ -235,9 +235,7 @@ def test_save_sidecar_has_required_metadata(tmp_path: Path) -> None:
     import json as _json
 
     encoder = _StubEncoder()
-    idx = DenseIndex(
-        [_chunk("c1"), _chunk("c2")], model=encoder, model_id="custom/model"
-    )
+    idx = DenseIndex([_chunk("c1"), _chunk("c2")], model=encoder, model_id="custom/model")
     path = tmp_path / "dense.npy"
     idx.save(path)
     meta = _json.loads(path.with_suffix(".json").read_text())

@@ -207,9 +207,7 @@ def test_sdpa_prefill_matches_manual() -> None:
     cfg_sdpa = TinyDocsConfig(**{**cfg_manual.__dict__, "attention_impl": "sdpa"})
 
     torch.manual_seed(0)
-    rope = RotaryEmbedding(
-        head_dim=cfg_manual.head_dim, max_seq_len=cfg_manual.max_seq_len
-    )
+    rope = RotaryEmbedding(head_dim=cfg_manual.head_dim, max_seq_len=cfg_manual.max_seq_len)
 
     attn_manual = Attention(cfg_manual)
     attn_sdpa = Attention(cfg_sdpa)
@@ -220,9 +218,7 @@ def test_sdpa_prefill_matches_manual() -> None:
     out_manual, cache_manual = attn_manual(x, rope, cache=None, position=0)
     out_sdpa, cache_sdpa = attn_sdpa(x, rope, cache=None, position=0)
 
-    assert torch.allclose(out_manual, out_sdpa, atol=1e-5), (
-        "SDPA prefill diverges from manual"
-    )
+    assert torch.allclose(out_manual, out_sdpa, atol=1e-5), "SDPA prefill diverges from manual"
     assert torch.allclose(cache_manual.keys, cache_sdpa.keys)
     assert torch.allclose(cache_manual.values, cache_sdpa.values)
 
@@ -236,9 +232,7 @@ def test_sdpa_decode_matches_manual() -> None:
     cfg_sdpa = TinyDocsConfig(**{**cfg_manual.__dict__, "attention_impl": "sdpa"})
 
     torch.manual_seed(0)
-    rope = RotaryEmbedding(
-        head_dim=cfg_manual.head_dim, max_seq_len=cfg_manual.max_seq_len
-    )
+    rope = RotaryEmbedding(head_dim=cfg_manual.head_dim, max_seq_len=cfg_manual.max_seq_len)
 
     attn_manual = Attention(cfg_manual)
     attn_sdpa = Attention(cfg_sdpa)
@@ -254,9 +248,7 @@ def test_sdpa_decode_matches_manual() -> None:
     out_manual, _ = attn_manual(x_new, rope, cache=cache_manual, position=8)
     out_sdpa, _ = attn_sdpa(x_new, rope, cache=cache_sdpa, position=8)
 
-    assert torch.allclose(out_manual, out_sdpa, atol=1e-5), (
-        "SDPA decode diverges from manual"
-    )
+    assert torch.allclose(out_manual, out_sdpa, atol=1e-5), "SDPA decode diverges from manual"
 
 
 def test_sdpa_full_model_forward_matches_manual() -> None:
