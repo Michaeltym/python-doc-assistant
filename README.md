@@ -249,15 +249,32 @@ auto-mounts `frontend/dist/` at `/` when the directory exists.
 | `GET` | `/health` | Liveness check, `{"status": "ok"}`. |
 | `GET` | `/` | Static React UI when `frontend/dist/` is mounted. |
 
-**Use as a Claude Code / Codex CLI tool (MCP):**
+**Use as an MCP tool (Claude Code / Codex CLI / Claude Desktop):**
 
-Once `pdr serve` is running, register the MCP endpoint in your client:
+Once `pdr serve` is running, register the MCP endpoint in your client.
+Config differs per client because Claude Desktop only speaks stdio
+while Claude Code / Codex CLI also speak Streamable HTTP.
+
+Claude Code / Codex CLI (HTTP transport, direct):
 
 ```json
 {
   "mcpServers": {
     "python-doc-assistant": {
       "url": "http://localhost:8000/mcp/mcp"
+    }
+  }
+}
+```
+
+Claude Desktop (stdio only — bridge through `mcp-remote`):
+
+```json
+{
+  "mcpServers": {
+    "python-doc-assistant": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8000/mcp/mcp"]
     }
   }
 }
