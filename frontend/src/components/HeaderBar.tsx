@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { ModelInfo } from "../types";
+import { ModelSelector } from "./ModelSelector";
 
 type HealthStatus = "checking" | "ok" | "down";
 
@@ -54,7 +56,14 @@ function HealthPill({ status }: { status: HealthStatus }) {
   );
 }
 
-export function HeaderBar({ docsVersion }: { docsVersion: string }) {
+interface HeaderBarProps {
+  docsVersion: string;
+  models: ModelInfo[];
+  selectedModel: string | null;
+  onSelectModel: (id: string) => void;
+}
+
+export function HeaderBar({ docsVersion, models, selectedModel, onSelectModel }: HeaderBarProps) {
   const status = useHealth();
   return (
     <header className="sticky top-0 z-10 border-b border-olive-700/60 bg-forest-950/70 px-4 py-3 backdrop-blur">
@@ -72,7 +81,10 @@ export function HeaderBar({ docsVersion }: { docsVersion: string }) {
             </p>
           </div>
         </div>
-        <HealthPill status={status} />
+        <div className="flex items-center gap-2">
+          <ModelSelector models={models} selectedId={selectedModel} onChange={onSelectModel} />
+          <HealthPill status={status} />
+        </div>
       </div>
     </header>
   );

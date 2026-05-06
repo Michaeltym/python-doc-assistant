@@ -55,6 +55,7 @@ async def _ask_handler(
     k: int = 5,
     rerank: bool = True,  # noqa: ARG001 — reserved for future routing
     hyde: bool = True,  # noqa: ARG001 — reserved for future routing
+    model: str | None = None,
 ) -> str:
     """Run the same retrieve → rewrite → generate pipeline as /api/ask.
 
@@ -106,7 +107,12 @@ async def _ask_handler(
     from python_doc_assistant.retrieval.query_rewriter import maybe_rewrite_query
     from python_doc_assistant.retrieval.router import classify
 
-    async with state.lock:
+    model_id = model or state.default_model
+    entry = state.models.get(model_id)
+    if entry is None:
+        return f"*Unknown model `{model_id}`. Available: {sorted(state.models)}.*"
+
+    async with entry.lock:
         start = time.perf_counter()
         retrieved = state.retrieve_fn(query, k)
         gen_chunks = [
@@ -114,7 +120,7 @@ async def _ask_handler(
         ]
         rewritten = maybe_rewrite_query(query, gen_chunks)
         qt = classify(query)
-        answer = state.generator.generate(rewritten, gen_chunks, query_type=qt)
+        answer = entry.generator.generate(rewritten, gen_chunks, query_type=qt)
         latency = time.perf_counter() - start
 
     if answer.refused:
@@ -191,7 +197,13 @@ def build_mcp_server(state: AskState) -> Any:
     mcp_server = FastMCP("python-doc-assistant")
 
     @mcp_server.tool()
-    async def ask(query: str, k: int = 5, rerank: bool = True, hyde: bool = True) -> str:
+    async def ask(
+        query: str,
+        k: int = 5,
+        rerank: bool = True,
+        hyde: bool = True,
+        model: str | None = None,
+    ) -> str:
         """Answer a Python standard library question with grounded retrieval.
 
         Use this when the user asks about anything in the Python stdlib —
@@ -199,7 +211,10 @@ def build_mcp_server(state: AskState) -> Any:
         "how do I X with Y" questions. The answer is grounded in pinned
         Python 3.12 docs and cites every fact with [N] markers + a
         Sources list of docs.python.org links.
+
+        ``model`` selects which generator answers (e.g. "qwen-7b-gguf"
+        or "tinydocs"). When omitted, the server's default is used.
         """
-        return await _ask_handler(state, query, k, rerank, hyde)
+        return await _ask_handler(state, query, k, rerank, hyde, model)
 
     return mcp_server

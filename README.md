@@ -244,10 +244,28 @@ auto-mounts `frontend/dist/` at `/` when the directory exists.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/ask` | Body `{"query": "...", "k": 5, "rerank": true, "hyde": true}` → SSE stream of `token` + `done` events. |
+| `POST` | `/api/ask` | Body `{"query": "...", "k": 5, "rerank": true, "hyde": true, "model": "qwen-7b-gguf"}` → SSE stream of `token` + `done` events. `model` is optional and falls back to the server default. |
+| `GET` | `/api/models` | List of registered models + the server's default; the React UI fetches this on mount and renders a dropdown. |
 | `POST` | `/mcp/mcp` | MCP Streamable HTTP transport. Exposes the `ask` tool to MCP-aware clients (Claude Code, Codex CLI). |
 | `GET` | `/health` | Liveness check, `{"status": "ok"}`. |
 | `GET` | `/` | Static React UI when `frontend/dist/` is mounted. |
+
+**Optional second model — TinyDocs v3.1 demo backend:**
+
+`pdr serve` accepts a v3.1 TinyDocs checkpoint to register as a second
+selectable model. Useful for showing off the hand-written 67 M model
+side-by-side with the Qwen 7B production backend in the chat UI.
+
+```bash
+uv run --all-extras pdr serve \
+    --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf \
+    --tinydocs-ckpt data/checkpoints/run-sft-v31/step_final.pt \
+    --tinydocs-tok data/tokenizer/tokenizer.json
+```
+
+The header dropdown gains a "TinyDocs v3.1" entry; switching to it
+routes new queries to the smaller model. Each model has its own lock
+so a slow Qwen call does not block a fast TinyDocs call.
 
 **Use as an MCP tool (Claude Code / Codex CLI / Claude Desktop):**
 

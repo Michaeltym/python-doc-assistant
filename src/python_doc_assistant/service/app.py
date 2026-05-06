@@ -49,6 +49,27 @@ class AskRequest(BaseModel):
     k: int = Field(5, ge=1, le=20)
     rerank: bool = True
     hyde: bool = True
+    model: str | None = None  # None → use AskState.default_model
+
+
+@dataclass
+class ModelEntry:
+    """One registered generator slot inside `AskState`.
+
+    Attributes:
+        generator: loaded `Generator` (Qwen GGUF, TinyDocs, etc.).
+        lock: per-model `asyncio.Lock`. Different runtimes (e.g.
+            llama-cpp Metal vs PyTorch MPS) can run concurrently, so
+            each model gets its own lock instead of one shared lock.
+        label: short human-readable name shown in the UI dropdown.
+        description: longer caption (memory footprint, speed, quality
+            note) for the dropdown row.
+    """
+
+    generator: Generator
+    lock: asyncio.Lock
+    label: str
+    description: str
 
 
 @dataclass
@@ -56,22 +77,32 @@ class AskState:
     """Shared state attached to the FastAPI app via `app.state.shared`.
 
     Attributes:
-        generator: loaded `Generator` (typically QwenGGUFGenerator).
+        models: registered model slots keyed by stable id (e.g.
+            `qwen-7b-gguf`, `tinydocs`).
+        default_model: id used when an AskRequest does not specify a
+            model.
         retrieve_fn: rank-K retriever closure built by the CLI for the
             requested config (dense / dense+rerank / dense+rerank+HyDE).
         chunks_by_id: full chunk lookup. Used by the typo rewriter and
             to map cited indices back to chunk_ids.
-        lock: `asyncio.Lock` serialising generate calls (Llama is not
-            thread-safe).
         static_root: optional path to a built React frontend
             (`frontend/dist/`). When set + exists, mounted at `/`.
     """
 
-    generator: Generator
+    models: dict[str, ModelEntry]
+    default_model: str
     retrieve_fn: Callable[[str, int], list[RetrievedChunk]]
     chunks_by_id: dict[str, Chunk]
-    lock: asyncio.Lock
     static_root: Path | None = None
+
+    def __post_init__(self) -> None:
+        if not self.models:
+            raise ValueError("AskState.models cannot be empty")
+        if self.default_model not in self.models:
+            raise ValueError(
+                f"default_model {self.default_model!r} not in registered models "
+                f"{sorted(self.models)!r}"
+            )
 
 
 # ------------------------------------------------------------------
@@ -142,6 +173,16 @@ def build_app(state: AskState) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/models")
+    async def models() -> dict[str, object]:
+        return {
+            "default": state.default_model,
+            "models": [
+                {"id": k, "label": v.label, "description": v.description}
+                for k, v in state.models.items()
+            ],
+        }
+
     @app.post("/api/ask")
     async def ask(request: AskRequest) -> EventSourceResponse:
         return EventSourceResponse(_ask_stream(state, request))
@@ -207,7 +248,15 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
     from python_doc_assistant.retrieval.router import classify
     from python_doc_assistant.service.streaming import done_event, error_event, token_event
 
-    async with state.lock:
+    model_id = request.model or state.default_model
+    entry = state.models.get(model_id)
+    if entry is None:
+        yield error_event(
+            f"unknown model {model_id!r}; available: {sorted(state.models)!r}"
+        )
+        return
+
+    async with entry.lock:
         start = time.perf_counter()
         try:
             retrieved = state.retrieve_fn(request.query, request.k)
@@ -218,7 +267,7 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             ]
             rewritten = maybe_rewrite_query(request.query, gen_chunks)
             qt = classify(request.query)
-            answer = state.generator.generate(rewritten, gen_chunks, query_type=qt)
+            answer = entry.generator.generate(rewritten, gen_chunks, query_type=qt)
         except Exception as exc:  # noqa: BLE001
             yield error_event(str(exc))
             return
@@ -241,4 +290,5 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             cited_chunks=cited_chunks,
             latency_seconds=time.perf_counter() - start,
             rewritten_query=rewritten if rewritten != request.query else None,
+            model=model_id,
         )

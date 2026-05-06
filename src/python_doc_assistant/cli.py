@@ -921,6 +921,22 @@ def eval_cmd(
         "with /api proxy) instead."
     ),
 )
+@click.option(
+    "--tinydocs-ckpt",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Optional TinyDocs (v3.1) checkpoint path. When provided together with "
+        "--tinydocs-tok, the server registers a second selectable model under the id "
+        "'tinydocs' and the UI grows a model picker."
+    ),
+)
+@click.option(
+    "--tinydocs-tok",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="TinyDocs tokenizer JSON path. Required when --tinydocs-ckpt is set.",
+)
 def serve_cmd(
     gguf_model_path: Path,
     version: str | None,
@@ -934,6 +950,8 @@ def serve_cmd(
     host: str,
     port: int,
     frontend_dist: Path,
+    tinydocs_ckpt: Path | None,
+    tinydocs_tok: Path | None,
 ) -> None:
     """Start an HTTP server exposing /api/ask + /health + the web UI.
 
@@ -1021,10 +1039,12 @@ def serve_cmd(
 
     from python_doc_assistant.generation.qwen_gguf_backend import QwenGGUFGenerator
     from python_doc_assistant.retrieval.hyde import QwenHypotheticalGenerator
-    from python_doc_assistant.service.app import AskState, build_app
+    from python_doc_assistant.service.app import AskState, ModelEntry, build_app
 
     if hyde and retriever != "dense":
         raise click.UsageError("--hyde requires --retriever=dense")
+    if (tinydocs_ckpt is None) != (tinydocs_tok is None):
+        raise click.UsageError("--tinydocs-ckpt and --tinydocs-tok must be set together")
 
     eff_version = _resolve_docs_version(version)
     eff_sha = _resolve_docs_sha(eff_version, docs_sha)
@@ -1067,18 +1087,43 @@ def serve_cmd(
     # AskRequest.k inside _ask_stream.
     _ = k
 
+    models: dict[str, ModelEntry] = {
+        "qwen-7b-gguf": ModelEntry(
+            generator=generator,
+            lock=asyncio.Lock(),
+            label="Qwen 7B Q4 GGUF",
+            description="4.7 GB · accurate · ~13 s/query (v4 production stack)",
+        )
+    }
+
+    if tinydocs_ckpt is not None and tinydocs_tok is not None:
+        from python_doc_assistant.generation.tinydocs_backend import TinyDocsGenerator
+
+        click.echo(f"loading tinydocs generator: {tinydocs_ckpt.name}")
+        td_gen = TinyDocsGenerator(
+            checkpoint_path=tinydocs_ckpt,
+            tokenizer_path=tinydocs_tok,
+        )
+        models["tinydocs"] = ModelEntry(
+            generator=td_gen,
+            lock=asyncio.Lock(),
+            label="TinyDocs v3.1",
+            description="67 M params · fast but lossy · grounded RAG comparison backend",
+        )
+
     static_root = frontend_dist if frontend_dist.is_dir() else None
     state = AskState(
-        generator=generator,
+        models=models,
+        default_model="qwen-7b-gguf",
         retrieve_fn=retrieve_fn,
         chunks_by_id=chunks_by_id,
-        lock=asyncio.Lock(),
         static_root=static_root,
     )
 
     app = build_app(state)
     click.echo(f"serving on http://{host}:{port}")
     click.echo(f"  retriever={retriever} rerank={rerank} hyde={hyde}")
+    click.echo(f"  models: {sorted(models)}")
     if static_root:
         click.echo(f"  ui mounted: {static_root}")
     else:

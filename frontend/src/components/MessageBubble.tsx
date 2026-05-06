@@ -102,7 +102,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Footer metadata: latency, refusal, rewritten query */}
+          {/* Footer metadata: latency, refusal, rewritten query, model */}
           {message.meta && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-cream-200/60">
               {message.meta.refused ? (
@@ -115,6 +115,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                     {message.meta.latency_seconds.toFixed(1)}s
                   </span>{" "}
                   · {citedChunks.length} {citedChunks.length === 1 ? "source" : "sources"}
+                </span>
+              )}
+              {message.meta.model && (
+                <span className="rounded-full border border-olive-700 bg-forest-950/60 px-2 py-0.5 font-mono text-[10.5px] text-cream-200/80">
+                  {message.meta.model}
                 </span>
               )}
               {message.meta.rewritten_query && (

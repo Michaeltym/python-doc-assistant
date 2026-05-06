@@ -78,6 +78,7 @@ def test_done_event_payload_carries_required_fields() -> None:
             },
         ),
         latency_seconds=12.345,
+        model="qwen-7b-gguf",
     )
     payload = json.loads(ev["data"])
     assert payload["refused"] is False
@@ -88,6 +89,7 @@ def test_done_event_payload_carries_required_fields() -> None:
     assert first["url"].startswith("https://docs.python.org/")
     assert payload["latency_seconds"] == 12.345
     assert payload["rewritten_query"] is None
+    assert payload["model"] == "qwen-7b-gguf"
 
 
 def test_done_event_includes_rewritten_query_when_provided() -> None:

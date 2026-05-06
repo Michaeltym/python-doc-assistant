@@ -11,7 +11,7 @@ from python_doc_assistant.evaluation.retrieval_metrics import RetrievedChunk
 from python_doc_assistant.generation.interface import Answer, Generator
 from python_doc_assistant.ingest.chunker import Chunk
 from python_doc_assistant.retrieval.router import QueryType
-from python_doc_assistant.service.app import AskState
+from python_doc_assistant.service.app import AskState, ModelEntry
 from python_doc_assistant.service.mcp import _ask_handler, build_mcp_app, build_mcp_server
 
 # ------------------------------------------------------------------
@@ -89,11 +89,19 @@ def _make_state(
             for i, c in enumerate(chunks[:k])
         ]
 
+    gen = generator if generator is not None else StubGenerator()
     return AskState(
-        generator=generator if generator is not None else StubGenerator(),
+        models={
+            "stub": ModelEntry(
+                generator=gen,
+                lock=asyncio.Lock(),
+                label="Stub",
+                description="test stub",
+            )
+        },
+        default_model="stub",
         retrieve_fn=retrieve_fn,
         chunks_by_id=chunks_by_id,
-        lock=asyncio.Lock(),
     )
 
 
@@ -141,6 +149,19 @@ def test_ask_handler_drops_cited_ids_missing_from_chunks_by_id() -> None:
 # ------------------------------------------------------------------
 # _ask_handler — refusal
 # ------------------------------------------------------------------
+
+
+def test_ask_handler_unknown_model_returns_error_markdown() -> None:
+    state = _make_state()
+    out = asyncio.run(_ask_handler(state, query="q", model="does-not-exist"))
+    assert "does-not-exist" in out
+    assert "Unknown model" in out
+
+
+def test_ask_handler_explicit_default_model_works() -> None:
+    state = _make_state()
+    out = asyncio.run(_ask_handler(state, query="json.loads", model="stub"))
+    assert "json.loads" in out
 
 
 def test_ask_handler_returns_refusal_message_when_model_refused() -> None:

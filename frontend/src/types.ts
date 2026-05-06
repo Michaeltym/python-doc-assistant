@@ -6,6 +6,7 @@ export interface AskRequest {
   k?: number;
   rerank?: boolean;
   hyde?: boolean;
+  model?: string;
 }
 
 export interface CitedChunk {
@@ -19,6 +20,18 @@ export interface DonePayload {
   cited_chunks: CitedChunk[];
   latency_seconds: number;
   rewritten_query: string | null;
+  model: string | null;
+}
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface ModelsResponse {
+  default: string;
+  models: ModelInfo[];
 }
 
 export interface TokenPayload {

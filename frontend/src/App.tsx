@@ -3,6 +3,7 @@ import { ChatBox, type ChatBoxHandle } from "./components/ChatBox";
 import { HeaderBar } from "./components/HeaderBar";
 import { MessageList } from "./components/MessageList";
 import { useAsk } from "./hooks/useAsk";
+import { useModels } from "./hooks/useModels";
 import type { DonePayload, Message } from "./types";
 
 function makeId() {
@@ -12,6 +13,7 @@ function makeId() {
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const { ask, cancel, inFlight } = useAsk();
+  const { models, selectedModel, setSelectedModel } = useModels();
   const chatRef = useRef<ChatBoxHandle>(null);
   const docsVersion = import.meta.env.VITE_DOCS_VERSION ?? "3.12";
 
@@ -31,7 +33,7 @@ export default function App() {
       };
 
       void ask(
-        { query },
+        { query, model: selectedModel ?? undefined },
         {
           onToken: (text) => updateAssistant({ text }),
           onDone: (meta: DonePayload) => updateAssistant({ meta, streaming: false }),
@@ -44,7 +46,7 @@ export default function App() {
         },
       );
     },
-    [ask],
+    [ask, selectedModel],
   );
 
   const handlePickSuggestion = useCallback((q: string) => {
@@ -53,7 +55,12 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <HeaderBar docsVersion={docsVersion} />
+      <HeaderBar
+        docsVersion={docsVersion}
+        models={models}
+        selectedModel={selectedModel}
+        onSelectModel={setSelectedModel}
+      />
       <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4">
         <MessageList messages={messages} onPickSuggestion={handlePickSuggestion} />
       </main>

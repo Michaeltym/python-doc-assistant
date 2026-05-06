@@ -7,7 +7,7 @@ Public exports:
     EVENT_TOKEN, EVENT_DONE, EVENT_ERROR — event names.
 """
 
-from python_doc_assistant.service.app import AskRequest, AskState, build_app
+from python_doc_assistant.service.app import AskRequest, AskState, ModelEntry, build_app
 from python_doc_assistant.service.mcp import build_mcp_app
 from python_doc_assistant.service.streaming import (
     EVENT_DONE,
@@ -24,6 +24,7 @@ __all__ = [
     "EVENT_DONE",
     "EVENT_ERROR",
     "EVENT_TOKEN",
+    "ModelEntry",
     "build_app",
     "build_mcp_app",
     "done_event",

@@ -14,7 +14,7 @@ from python_doc_assistant.evaluation.retrieval_metrics import RetrievedChunk
 from python_doc_assistant.generation.interface import Answer, Generator
 from python_doc_assistant.ingest.chunker import Chunk
 from python_doc_assistant.retrieval.router import QueryType
-from python_doc_assistant.service.app import AskRequest, AskState, build_app
+from python_doc_assistant.service.app import AskRequest, AskState, ModelEntry, build_app
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -93,11 +93,19 @@ def _make_state(
             for i, c in enumerate(chunks[:k])
         ]
 
+    gen = generator if generator is not None else StubGenerator()
     return AskState(
-        generator=generator if generator is not None else StubGenerator(),
+        models={
+            "stub": ModelEntry(
+                generator=gen,
+                lock=asyncio.Lock(),
+                label="Stub",
+                description="test stub",
+            )
+        },
+        default_model="stub",
         retrieve_fn=retrieve_fn,
         chunks_by_id=chunks_by_id,
-        lock=asyncio.Lock(),
     )
 
 
@@ -156,6 +164,48 @@ def test_health_returns_ok(client) -> None:
     resp = test_client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+# ------------------------------------------------------------------
+# /api/models
+# ------------------------------------------------------------------
+
+
+def test_api_models_returns_default_and_list(client) -> None:
+    test_client, _ = client
+    resp = test_client.get("/api/models")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["default"] == "stub"
+    assert len(data["models"]) == 1
+    m = data["models"][0]
+    assert m["id"] == "stub"
+    assert m["label"] == "Stub"
+    assert "description" in m
+
+
+def test_api_ask_done_carries_model_field(client) -> None:
+    test_client, _ = client
+    resp = test_client.post("/api/ask", json={"query": "what is json.loads"})
+    done_payloads = [p for n, p in _parse_sse(resp.text) if n == "done"]
+    assert done_payloads[0]["model"] == "stub"
+
+
+def test_api_ask_unknown_model_yields_error_event(client) -> None:
+    test_client, _ = client
+    resp = test_client.post("/api/ask", json={"query": "q", "model": "does-not-exist"})
+    events = _parse_sse(resp.text)
+    names = [name for name, _ in events]
+    assert "error" in names
+    err = next(p for n, p in events if n == "error")
+    assert "does-not-exist" in err["message"]
+
+
+def test_api_ask_explicit_default_model_works(client) -> None:
+    test_client, _ = client
+    resp = test_client.post("/api/ask", json={"query": "q", "model": "stub"})
+    done_payloads = [p for n, p in _parse_sse(resp.text) if n == "done"]
+    assert done_payloads[0]["model"] == "stub"
 
 
 # ------------------------------------------------------------------

@@ -49,6 +49,7 @@ def done_event(
     cited_chunks: tuple[dict[str, str], ...],
     latency_seconds: float,
     rewritten_query: str | None = None,
+    model: str | None = None,
 ) -> dict[str, str]:
     """Build the terminal SSE event with metadata.
 
@@ -60,12 +61,14 @@ def done_event(
         latency_seconds: wall-clock seconds for the full ask call.
         rewritten_query: when the typo rewriter fired, the rewritten
             query string. None when the original query was used.
+        model: id of the model that produced the answer (e.g.
+            "qwen-7b-gguf" or "tinydocs"). The frontend uses this for
+            the "answered by" footer chip.
 
     Returns:
         ``{"event": "done", "data": "<json>"}`` where the JSON payload
-        contains ``refused`` (bool), ``cited_chunks`` (list of dicts
-        with chunk_id / title / url), ``latency_seconds`` (float), and
-        ``rewritten_query`` (str | None) for the client.
+        contains ``refused``, ``cited_chunks``, ``latency_seconds``,
+        ``rewritten_query``, and ``model``.
     """
     return {
         "event": EVENT_DONE,
@@ -75,6 +78,7 @@ def done_event(
                 "cited_chunks": list(cited_chunks),
                 "latency_seconds": latency_seconds,
                 "rewritten_query": rewritten_query,
+                "model": model,
             }
         ),
     }
