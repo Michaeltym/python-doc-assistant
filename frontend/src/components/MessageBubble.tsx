@@ -11,9 +11,9 @@ interface MessageBubbleProps {
 function StreamingDots() {
   return (
     <span className="inline-flex items-center gap-1 align-middle">
-      <span className="h-1.5 w-1.5 animate-dot-1 rounded-full bg-slate-500" />
-      <span className="h-1.5 w-1.5 animate-dot-2 rounded-full bg-slate-500" />
-      <span className="h-1.5 w-1.5 animate-dot-3 rounded-full bg-slate-500" />
+      <span className="h-1.5 w-1.5 animate-dot-1 rounded-full bg-cream-200/70" />
+      <span className="h-1.5 w-1.5 animate-dot-2 rounded-full bg-cream-200/70" />
+      <span className="h-1.5 w-1.5 animate-dot-3 rounded-full bg-cream-200/70" />
     </span>
   );
 }
@@ -34,7 +34,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   if (isUser) {
     return (
       <div className="flex animate-fade-up justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-amber-500 px-4 py-2.5 text-[15px] font-medium text-slate-900 shadow-md shadow-amber-500/10">
+        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-sand-500 px-4 py-2.5 text-[15px] font-medium text-forest-900 shadow-md shadow-sand-500/15">
           {message.text}
         </div>
       </div>
@@ -47,18 +47,18 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div className="flex animate-fade-up flex-col gap-2">
       <div className="flex gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 shadow-md shadow-amber-500/20">
-          <span className="font-mono text-sm font-bold text-slate-900">py</span>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cream-50 shadow-md shadow-cream-50/10">
+          <span className="font-mono text-sm font-bold text-forest-900">py</span>
         </div>
         <div className="min-w-0 flex-1">
           <div
             className={[
-              "max-w-full rounded-2xl rounded-tl-sm border px-4 py-3 shadow-lg shadow-black/20",
+              "max-w-full rounded-2xl rounded-tl-sm border px-4 py-3 shadow-lg shadow-black/30",
               errored
                 ? "border-red-900/60 bg-red-950/40 text-red-100"
                 : refused
-                  ? "border-slate-800 bg-slate-900/60 text-slate-400 italic"
-                  : "border-slate-800 bg-slate-900/80 text-slate-100",
+                  ? "border-olive-700 bg-forest-900/60 text-cream-200/70 italic"
+                  : "border-olive-700 bg-forest-900/80 text-cream-50",
             ].join(" ")}
           >
             {message.text ? (
@@ -69,7 +69,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   // eslint-disable-next-line react/no-children-prop
                   children={preprocessAnswer(message.text)}
                   components={{
-                    // Allow our preprocessed cite-marker spans to pass through.
                     span: ({ className, ...props }) =>
                       className === "cite-marker" ? (
                         <span className="cite-marker" {...props} />
@@ -95,12 +94,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
           {/* Footer metadata: latency, refusal, rewritten query */}
           {message.meta && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-cream-200/60">
               {message.meta.refused ? (
-                <span className="text-slate-500 italic">insufficient context — refused</span>
+                <span className="text-cream-200/60 italic">insufficient context — refused</span>
               ) : (
                 <span>
-                  <span className="font-mono text-slate-400">
+                  <span className="font-mono text-cream-200">
                     {message.meta.latency_seconds.toFixed(1)}s
                   </span>{" "}
                   · {message.meta.cited_chunk_ids.length}{" "}
@@ -108,7 +107,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                 </span>
               )}
               {message.meta.rewritten_query && (
-                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-400">
+                <span className="rounded-full bg-sand-500/15 px-2 py-0.5 text-sand-400">
                   query rewritten →{" "}
                   <span className="font-mono">{message.meta.rewritten_query}</span>
                 </span>

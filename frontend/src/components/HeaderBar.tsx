@@ -28,15 +28,17 @@ function useHealth(): HealthStatus {
 }
 
 function HealthPill({ status }: { status: HealthStatus }) {
+  // Semantic dot colors stay green / red so users read the signal
+  // instantly. Pill bg + text use the palette (cream on forest).
   const config: Record<HealthStatus, { label: string; dot: string; text: string }> = {
-    checking: { label: "checking…", dot: "bg-slate-500", text: "text-slate-400" },
-    ok: { label: "online", dot: "bg-emerald-500", text: "text-emerald-400" },
-    down: { label: "offline", dot: "bg-red-500", text: "text-red-400" },
+    checking: { label: "checking…", dot: "bg-cream-300", text: "text-cream-200" },
+    ok: { label: "online", dot: "bg-emerald-400", text: "text-emerald-300" },
+    down: { label: "offline", dot: "bg-red-400", text: "text-red-300" },
   };
   const c = config[status];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium ${c.text}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border border-olive-700 bg-forest-900/80 px-2.5 py-1 text-[11px] font-medium ${c.text}`}
     >
       <span
         className={`relative flex h-1.5 w-1.5 ${
@@ -55,15 +57,17 @@ function HealthPill({ status }: { status: HealthStatus }) {
 export function HeaderBar({ docsVersion }: { docsVersion: string }) {
   const status = useHealth();
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-800/60 bg-slate-950/70 px-4 py-3 backdrop-blur">
+    <header className="sticky top-0 z-10 border-b border-olive-700/60 bg-forest-950/70 px-4 py-3 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 shadow-md shadow-amber-500/20">
-            <span className="font-mono text-sm font-bold text-slate-900">py</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cream-50 shadow-md shadow-cream-50/10">
+            <span className="font-mono text-sm font-bold text-forest-900">py</span>
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-slate-100">python-doc-assistant</h1>
-            <p className="font-mono text-[11px] text-slate-500">
+            <h1 className="font-display text-sm font-bold tracking-wider text-cream-50 uppercase">
+              python_doc_assistant
+            </h1>
+            <p className="font-mono text-[11px] tracking-wide text-cream-200/70">
               docs {docsVersion} · grounded · local
             </p>
           </div>

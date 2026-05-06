@@ -19,11 +19,13 @@ const SUGGESTIONS: { label: string; query: string }[] = [
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center py-12">
-      <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30">
-        <span className="font-mono text-xl font-bold text-slate-900">py</span>
+      <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-cream-50 shadow-lg shadow-cream-50/15">
+        <span className="font-mono text-xl font-bold text-forest-900">py</span>
       </div>
-      <h2 className="text-xl font-semibold text-slate-100">Ask the Python docs</h2>
-      <p className="mt-1 text-sm text-slate-500">
+      <h2 className="font-display text-xl font-bold tracking-wider text-cream-50 uppercase">
+        Ask the Python docs
+      </h2>
+      <p className="mt-2 text-sm text-cream-200/70">
         Grounded answers from the Python 3.12 standard library.
       </p>
       <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
@@ -32,12 +34,12 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
             key={s.query}
             type="button"
             onClick={() => onPick(s.query)}
-            className="group rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-left transition hover:border-amber-500/40 hover:bg-slate-900"
+            className="group rounded-xl border border-olive-700 bg-forest-900/60 px-4 py-3 text-left transition hover:border-sand-500 hover:bg-forest-900"
           >
-            <div className="text-sm font-medium text-slate-200 group-hover:text-amber-300">
+            <div className="text-sm font-medium text-cream-50 group-hover:text-sand-400">
               {s.label}
             </div>
-            <div className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{s.query}</div>
+            <div className="mt-0.5 truncate font-mono text-[11px] text-cream-200/60">{s.query}</div>
           </button>
         ))}
       </div>

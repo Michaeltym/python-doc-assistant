@@ -62,7 +62,6 @@ export function ChatBox({ onSubmit, disabled = false, onCancel, inputRef }: Chat
     [],
   );
 
-  // Autosize textarea (capped at ~6 lines).
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -93,10 +92,10 @@ export function ChatBox({ onSubmit, disabled = false, onCancel, inputRef }: Chat
     <form onSubmit={handleSubmit} className="px-4 pb-4">
       <div
         className={[
-          "flex items-end gap-2 rounded-2xl border bg-slate-900/80 p-2 shadow-lg shadow-black/30 backdrop-blur transition",
+          "flex items-end gap-2 rounded-2xl border bg-forest-900/80 p-2 shadow-lg shadow-black/40 backdrop-blur transition",
           disabled
-            ? "border-slate-800"
-            : "border-slate-800 focus-within:border-amber-500/60 focus-within:shadow-amber-500/5",
+            ? "border-olive-700"
+            : "border-olive-700 focus-within:border-cream-50/60 focus-within:shadow-cream-50/5",
         ].join(" ")}
       >
         <textarea
@@ -106,14 +105,14 @@ export function ChatBox({ onSubmit, disabled = false, onCancel, inputRef }: Chat
           onKeyDown={handleKeyDown}
           rows={1}
           placeholder="Ask about pathlib, asyncio, json…"
-          className="flex-1 resize-none bg-transparent px-3 py-2 text-[15px] text-slate-100 placeholder-slate-500 focus:outline-none"
+          className="flex-1 resize-none bg-transparent px-3 py-2 text-[15px] text-cream-50 placeholder-cream-200/40 focus:outline-none"
         />
         {disabled && onCancel ? (
           <button
             type="button"
             onClick={onCancel}
             aria-label="Stop"
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-slate-300 transition hover:bg-red-700 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-olive-700 text-cream-100 transition hover:bg-red-700 hover:text-cream-50"
           >
             <StopIcon />
           </button>
@@ -122,18 +121,18 @@ export function ChatBox({ onSubmit, disabled = false, onCancel, inputRef }: Chat
             type="submit"
             disabled={disabled || !value.trim()}
             aria-label="Send"
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-slate-900 shadow-md shadow-amber-500/30 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-cream-50 text-forest-900 shadow-md shadow-cream-50/15 transition hover:bg-sand-400 disabled:cursor-not-allowed disabled:bg-olive-700 disabled:text-cream-200/40 disabled:shadow-none"
           >
             <SendIcon />
           </button>
         )}
       </div>
-      <p className="mt-2 px-1 text-[11px] text-slate-500">
-        <kbd className="rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 font-mono text-[10px]">
+      <p className="mt-2 px-1 text-[11px] text-cream-200/50">
+        <kbd className="rounded border border-olive-700 bg-forest-900 px-1.5 py-0.5 font-mono text-[10px] text-cream-100">
           Enter
         </kbd>{" "}
         to send ·{" "}
-        <kbd className="rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 font-mono text-[10px]">
+        <kbd className="rounded border border-olive-700 bg-forest-900 px-1.5 py-0.5 font-mono text-[10px] text-cream-100">
           Shift + Enter
         </kbd>{" "}
         for newline

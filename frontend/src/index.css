@@ -1,6 +1,5 @@
-@import url("https://rsms.me/inter/inter.css");
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
-@import "highlight.js/styles/atom-one-dark.css";
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Orbitron:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import "highlight.js/styles/github-dark.css";
 
 @tailwind base;
 @tailwind components;
@@ -13,33 +12,41 @@
     height: 100%;
   }
   html {
-    font-family: "Inter", system-ui, sans-serif;
+    font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+    /* Slight letter-spacing for a more deliberate, mechanical rhythm. */
+    letter-spacing: 0.005em;
   }
   body {
-    @apply bg-slate-950 text-slate-100 antialiased;
+    @apply bg-forest-950 text-cream-50 antialiased;
     background-image:
-      radial-gradient(1200px 600px at 50% -10%, rgba(245, 158, 11, 0.06), transparent 60%),
-      radial-gradient(800px 400px at 110% 30%, rgba(99, 102, 241, 0.05), transparent 70%);
+      radial-gradient(1200px 600px at 50% -10%, rgba(221, 161, 94, 0.08), transparent 60%),
+      radial-gradient(900px 500px at 110% 20%, rgba(188, 108, 37, 0.06), transparent 70%);
     background-attachment: fixed;
+  }
+
+  /* Override highlight.js theme bg so code blocks blend into the
+     forest palette instead of the default GitHub dark grey. */
+  pre code.hljs {
+    background: transparent !important;
   }
 }
 
 @layer components {
   /* Markdown answer body — match the chat aesthetic without overpowering. */
   .prose-answer {
-    @apply text-[15px] leading-relaxed text-slate-100;
+    @apply text-[15px] leading-relaxed text-cream-50;
   }
   .prose-answer p {
     @apply my-2 first:mt-0 last:mb-0;
   }
   .prose-answer code:not(pre code) {
-    @apply rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[13px] text-amber-300;
+    @apply rounded bg-forest-950 px-1.5 py-0.5 font-mono text-[13px] text-sand-400;
   }
   .prose-answer pre {
-    @apply my-3 overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/80 p-3 text-[13px] leading-relaxed;
+    @apply my-3 overflow-x-auto rounded-lg border border-olive-700 bg-forest-950 p-3 text-[13px] leading-relaxed;
   }
   .prose-answer pre code {
-    @apply bg-transparent p-0 font-mono text-slate-200;
+    @apply bg-transparent p-0 font-mono text-cream-100;
   }
   .prose-answer ul,
   .prose-answer ol {
@@ -66,25 +73,25 @@
     @apply text-sm;
   }
   .prose-answer a {
-    @apply text-amber-400 underline-offset-2 hover:underline;
+    @apply text-sand-400 underline-offset-2 hover:text-sand-500 hover:underline;
   }
   .prose-answer blockquote {
-    @apply my-2 border-l-2 border-slate-700 pl-3 text-slate-300;
+    @apply my-2 border-l-2 border-olive-700 pl-3 text-cream-200;
   }
   .prose-answer table {
     @apply my-3 w-full border-collapse text-sm;
   }
   .prose-answer th,
   .prose-answer td {
-    @apply border border-slate-800 px-2 py-1 text-left;
+    @apply border border-olive-700 px-2 py-1 text-left;
   }
   .prose-answer th {
-    @apply bg-slate-900 font-medium;
+    @apply bg-olive-800 font-medium;
   }
 
-  /* Citation-bracket markers like [1] — render small + amber so they
+  /* Citation-bracket markers like [1] — render small + sand so they
      read as references rather than body text. */
   .prose-answer .cite-marker {
-    @apply mx-0.5 inline-block rounded bg-amber-500/10 px-1 font-mono text-[11px] font-medium text-amber-400;
+    @apply mx-0.5 inline-block rounded bg-sand-500/20 px-1 font-mono text-[11px] font-medium text-sand-400;
   }
 }
