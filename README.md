@@ -196,6 +196,66 @@ uv run python scripts/per_type_metrics.py \
     --run-dir experiments/runs/<timestamp>-my-eval-run
 ```
 
+### v4 web UI (FastAPI + React)
+
+Same backend as `pdr ask`, served over HTTP behind a React chat UI.
+Useful when you want a browser tab or want to share with someone on
+your LAN.
+
+Requires Node ≥ 22 (frontend deps), in addition to the v4 production
+stack above.
+
+**Dev mode** (Vite hot-reload + FastAPI side-by-side, two terminals):
+
+```bash
+# Terminal 1 — FastAPI backend on :8000
+uv run --all-extras pdr serve \
+    --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf
+
+# Terminal 2 — Vite dev server on :5173 (proxies /api → :8000)
+cd frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). Vite auto-reloads
+on frontend file changes; the backend reloads only on restart.
+
+**Production mode** (single port, no Node runtime needed once the
+frontend is built):
+
+```bash
+# One-time: build the frontend bundle into frontend/dist/
+cd frontend
+npm install
+npm run build
+cd ..
+
+# Single command — FastAPI serves both /api/* and the static UI at /
+uv run --all-extras pdr serve \
+    --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf \
+    --host 127.0.0.1 --port 8000
+```
+
+Open [http://localhost:8000](http://localhost:8000). The FastAPI app
+auto-mounts `frontend/dist/` at `/` when the directory exists.
+
+**Endpoints:**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/ask` | Body `{"query": "...", "k": 5, "rerank": true, "hyde": true}` → SSE stream of `token` + `done` events. |
+| `GET` | `/health` | Liveness check, `{"status": "ok"}`. |
+| `GET` | `/` | Static React UI when `frontend/dist/` is mounted. |
+
+`pdr serve --help` lists every flag (retriever / rerank / HyDE / port
+/ host / frontend-dist).
+
+The server holds a single QwenGGUFGenerator + retrieve_fn for the
+process lifetime. Concurrent /api/ask requests serialise behind an
+`asyncio.Lock` because llama-cpp-python's `Llama` is not thread-safe;
+two simultaneous clients queue rather than racing.
+
 ---
 
 ## Architecture
@@ -263,10 +323,12 @@ against the exact corpus they were measured against.
 | Generation backend (v4) | `llama-cpp-python` + `Qwen2.5-7B-Instruct-Q4_K_M.gguf` on M1 Metal | v4 sub-task 3'; same `Generator` ABC as v1, n_ctx=8192, temperature=0. |
 | LLM-as-judge (v2 historical) | `anthropic` (`claude-haiku-4-5-20251001`) | v2 §6; 4-tier rubric + Cohen's kappa. Bias documented in `experiments/v4-prod-track.md` Week 3. |
 | LLM-as-judge (v4 final) | Codex CLI internal LLM (GPT-5.5) | v4 Week 3; same prompt hash `65fa23b9`, rubric-faithful re-evaluation. |
+| HTTP server (v4) | `fastapi` + `uvicorn` + `sse-starlette` | v4 sub-task 7; `pdr serve` exposes `/api/ask` (SSE stream) + `/health` + static frontend mount. |
+| Web UI (v4) | React 19 + Vite 6 + TypeScript + Tailwind 3 + react-markdown | v4 sub-task 9; single-page chat in `frontend/`. Native `fetch` + `ReadableStream` for SSE (EventSource cannot do POST). |
 | Lint + format | `ruff` (E / F / I rules) | Replaces black + isort + flake8. |
 | Type checking | `mypy --strict` | Catches API drift early; `py.typed` marker for downstream consumers. |
 | Test runner | `pytest` (+ `CliRunner` for CLI tests) | Hermetic; no real network. |
-| Optional extras | `pyproject.toml` extras: `ingest`, `retrieval`, `generation`, `embedding`, `rerank` | v0 installs only `ingest` + `retrieval`; later stages opt-in. |
+| Optional extras | `pyproject.toml` extras: `ingest`, `retrieval`, `generation`, `embedding`, `rerank`, `judge`, `service` | v0 installs only `ingest` + `retrieval`; later stages opt-in. v4 web UI uses `service`. |
 
 ---
 
@@ -278,7 +340,7 @@ against the exact corpus they were measured against.
 | **v1** | `Qwen2.5-1.5B-Instruct` as a grounded generator with citations + refusal; out-of-scope eval set | [`plans/v1-qwen-generator.md`](plans/v1-qwen-generator.md) | ✅ Grounded prompt + 4-tier scoring shipped |
 | **v2** | Ablation: dense embeddings + hybrid (RRF / linear) + cross-encoder rerank, eval set scaled to 111 queries, LLM-as-judge with kappa-calibrated rubric, cross-generator follow-up | [`plans/v2-ablation.md`](plans/v2-ablation.md) | ✅ Recall@5 = 0.838 on `dense+rerank`; accuracy 61-69% on Qwen 1.5B configs, 75.7% on GPT-5.5; halluc 2.7-25.2% |
 | **v3** | (Research side track) Hand-written decoder-only LLM (RoPE / RMSNorm / SwiGLU / KV cache) plugged into the same RAG pipeline as a comparison backend | [`plans/v3-tiny-llm.md`](plans/v3-tiny-llm.md) | Research; no accuracy claim — learning value only |
-| **v4** | Production-track accuracy lift on a Qwen-only path: 7B Q4 GGUF backend (`llama.cpp` + Metal), refusal calibration, code-level typo query rewriter (Levenshtein-based), HyDE retriever, judge re-evaluation (Haiku 4.5 → Codex CLI / GPT-5.5) | [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md), [`experiments/v4-prod-track.md`](experiments/v4-prod-track.md) | ✅ accuracy 0.874 / hallucination 0.009 (n=111, Codex-judged); plan target `≥ 0.78` / `≤ 0.10` exceeded with margin |
+| **v4** | Production-track accuracy lift on a Qwen-only path: 7B Q4 GGUF backend (`llama.cpp` + Metal), refusal calibration, code-level typo query rewriter (Levenshtein-based), HyDE retriever, judge re-evaluation (Haiku 4.5 → Codex CLI / GPT-5.5), HTTP server + React web UI | [`plans/v4-prod-ready.md`](plans/v4-prod-ready.md), [`experiments/v4-prod-track.md`](experiments/v4-prod-track.md) | ✅ accuracy 0.874 / hallucination 0.009 (n=111, Codex-judged); plan target `≥ 0.78` / `≤ 0.10` exceeded with margin. CLI + FastAPI/React UI both ship. |
 
 Top-level project plan: [`PLAN.md`](PLAN.md). Per-stage plans are the
 authoritative source for sub-task ordering, acceptance criteria, and
@@ -306,8 +368,22 @@ python-doc-assistant/
 │   ├── v0-bm25-only.md             # v0 narrative
 │   ├── v1-qwen-grounded.md         # v1 narrative
 │   ├── v2-ablation.md              # v2 narrative
+│   ├── v4-prod-track.md            # v4 narrative (Codex-judged)
 │   └── runs/<ts>-<tag>/            # machine-readable run snapshots
-├── data/                           # gitignored: docs / chunks / indexes
+├── data/                           # gitignored: docs / chunks / indexes / GGUF models
+├── scripts/
+│   ├── triage_failures.py          # bucketise judged rows by tier × hit_at_5
+│   └── per_type_metrics.py         # v4 sub-task 5b/c: per query_type breakdown + refusal F1
+├── frontend/                       # v4 sub-task 9 — React + Vite + TS + Tailwind chat UI
+│   ├── package.json
+│   ├── vite.config.ts              # Vite config; /api proxy to :8000 in dev
+│   ├── eslint.config.js / .prettierrc.json
+│   └── src/
+│       ├── App.tsx / main.tsx
+│       ├── components/             # ChatBox / MessageList / MessageBubble / Citation / HeaderBar
+│       ├── hooks/useAsk.ts         # POST /api/ask + parse SSE byte stream
+│       ├── lib/remarkCiteMarker.ts # markdown plugin: style [N] / [N, M] inline markers
+│       └── types.ts                # mirrors backend AskRequest / DonePayload schemas
 └── src/python_doc_assistant/
     ├── ingest/
     │   ├── fetch_docs.py           # download + sha-key + manifest
@@ -321,10 +397,15 @@ python-doc-assistant/
     │   ├── router.py               # identifier vs NL dispatch
     │   ├── hybrid.py               # v2 §2: RRF + linear merge
     │   ├── rerank.py               # v2 §3: cross-encoder reranker
-    │   └── factory.py              # build retriever from CLI flags
+    │   ├── factory.py              # build retriever from CLI flags
+    │   ├── query_rewriter.py       # v4 sub-task 1': Levenshtein typo rewriter
+    │   └── hyde.py                 # v4 sub-task 2: HyDE retriever wrapper
     ├── generation/
-    │   ├── interface.py            # v1 §2: Generator ABC + grounded prompt + citation parser
-    │   └── qwen_backend.py         # v1 §2: Qwen2.5-1.5B-Instruct backend
+    │   ├── interface.py            # v1 §2: Generator ABC
+    │   ├── qwen_backend.py         # v1 §2: Qwen2.5-1.5B-Instruct (HF transformers)
+    │   └── qwen_gguf_backend.py    # v4 sub-task 3': Qwen2.5-7B-Instruct Q4_K_M GGUF backend
+    ├── prompts/
+    │   └── grounded.py             # v1: grounded prompt template + citation parser + REFUSAL_MARKER
     ├── evaluation/
     │   ├── dataset.py              # eval set schema + JSONL loader
     │   ├── retrieval_metrics.py    # is_hit + Recall@K + MRR
@@ -332,7 +413,10 @@ python-doc-assistant/
     │   ├── generation_eval.py      # v1 §4: per-query generation pipeline
     │   ├── human_scoring.py        # v1 §6: 4-tier scoring schema + aggregate
     │   └── judge.py                # v2 §6: LLM-as-judge (Anthropic Haiku 4.5)
-    └── cli.py                      # pdr ingest / build-index / search / eval / judge
+    ├── service/                    # v4 sub-task 7: HTTP server
+    │   ├── streaming.py            # SSE event helpers (token / done / error)
+    │   └── app.py                  # FastAPI build_app + /api/ask + /health
+    └── cli.py                      # pdr ingest / build-index / search / ask / eval / judge / serve
 ```
 
 ---
@@ -425,14 +509,23 @@ measured against.
 
 v4 closed with accuracy 0.874 / hallucination 0.009, both past plan
 targets. The Qwen-only path is production-ready as a single-developer
-local CLI. Possible v5 directions, none currently active:
+local CLI **and** as a single-port FastAPI / React web UI. Possible v5
+directions, none currently active:
 
 - **Eval set with explicit `out_of_scope` rows** so refusal F1 is a
   meaningful metric (currently it falls back to `hit_at_5`-proxy F1
   because `v2_full` has no OOS labels).
-- **HTTP / MCP server wrapper** turning `pdr ask` into a multi-user
-  service — needs streaming output, OOS query handling, monitoring.
-  Listed as optional in the v4 plan; never started.
+- **MCP server endpoint** so this RAG stack shows up as a tool inside
+  Claude Code / Codex CLI — listed as v4 sub-task 10, not yet
+  started. Builds on the existing FastAPI service.
+- **Real token-by-token streaming** in `pdr serve` — the current SSE
+  stream emits the full answer in one `token` event (fake-stream).
+  Wiring `Llama.create_chat_completion(stream=True)` through to the
+  SSE generator gives per-token output for free.
+- **Multi-user concurrency** — the FastAPI server serialises
+  `/api/ask` behind an `asyncio.Lock` because llama-cpp's `Llama` is
+  single-stream. A 2nd client waits ~13 s for the 1st to finish.
+  Multi-instance pool or vLLM if shared use is needed.
 - **v3 (research side track)**: hand-written decoder-only tiny LLM
   (RoPE / RMSNorm / SwiGLU / KV cache) as a Generator backend
   alongside Qwen — purely for learning the architecture end-to-end,
