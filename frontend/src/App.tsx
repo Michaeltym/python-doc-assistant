@@ -90,7 +90,7 @@ export default function App() {
         </>
       ) : (
         <main className="flex-1 overflow-y-auto">
-          <PlaygroundView selectedModel={selectedModel} />
+          <PlaygroundView models={models} selectedModel={selectedModel} />
         </main>
       )}
     </div>

@@ -1,16 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayground } from "../hooks/usePlayground";
-import type { DonePayload } from "../types";
+import type { DonePayload, ModelInfo } from "../types";
 
 interface PlaygroundViewProps {
+  models: ModelInfo[];
   selectedModel: string | null;
 }
+
+// Hard ceiling on what the slider exposes regardless of model context.
+// Most generators easily handle 1024 but going higher slows things
+// down enough that we want the user to opt in deliberately rather
+// than nudge a slider.
+const SLIDER_HARD_MAX = 1024;
+const PROMPT_RESERVE = 16;
 
 const STORAGE_PROMPT = "pdr.playground.prompt";
 const STORAGE_MAX = "pdr.playground.maxTokens";
 const STORAGE_TEMP = "pdr.playground.temperature";
 
-export function PlaygroundView({ selectedModel }: PlaygroundViewProps) {
+export function PlaygroundView({ models, selectedModel }: PlaygroundViewProps) {
+  const currentModel = useMemo(
+    () => models.find((m) => m.id === selectedModel) ?? null,
+    [models, selectedModel],
+  );
+  const sliderMax = useMemo(() => {
+    if (!currentModel) return SLIDER_HARD_MAX;
+    return Math.max(32, Math.min(SLIDER_HARD_MAX, currentModel.max_seq_len - PROMPT_RESERVE));
+  }, [currentModel]);
+
   const [prompt, setPrompt] = useState<string>(() => localStorage.getItem(STORAGE_PROMPT) ?? "");
   const [maxTokens, setMaxTokens] = useState<number>(
     () => Number(localStorage.getItem(STORAGE_MAX)) || 256,
@@ -43,6 +60,13 @@ export function PlaygroundView({ selectedModel }: PlaygroundViewProps) {
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 280)}px`;
   }, [prompt]);
+
+  // Re-clamp max_tokens when the model (and therefore sliderMax) changes,
+  // so a saved 1000 from a previous Qwen session does not stay stuck on
+  // a 256-context TinyDocs.
+  useEffect(() => {
+    if (maxTokens > sliderMax) setMaxTokens(sliderMax);
+  }, [sliderMax, maxTokens]);
 
   const submit = useCallback(() => {
     if (!prompt.trim() || inFlight) return;
@@ -99,13 +123,18 @@ export function PlaygroundView({ selectedModel }: PlaygroundViewProps) {
           <label className="flex flex-col gap-1">
             <span className="font-mono text-[10.5px] uppercase tracking-wider text-cream-200/70">
               max_tokens · {maxTokens}
+              {currentModel && (
+                <span className="ml-1 text-cream-200/40">
+                  (cap {sliderMax} for {currentModel.id})
+                </span>
+              )}
             </span>
             <input
               type="range"
               min={32}
-              max={1024}
-              step={32}
-              value={maxTokens}
+              max={sliderMax}
+              step={Math.max(8, Math.floor(sliderMax / 32))}
+              value={Math.min(maxTokens, sliderMax)}
               onChange={(e) => setMaxTokens(Number(e.target.value))}
               className="accent-sand-500"
             />

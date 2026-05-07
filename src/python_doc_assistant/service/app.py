@@ -65,12 +65,17 @@ class ModelEntry:
         label: short human-readable name shown in the UI dropdown.
         description: longer caption (memory footprint, speed, quality
             note) for the dropdown row.
+        max_seq_len: total context window (prompt + generation) the
+            underlying model was trained / configured for. Surfaced
+            via `/api/models` so the playground UI can clamp its
+            max_tokens slider per-model.
     """
 
     generator: Generator
     lock: asyncio.Lock
     label: str
     description: str
+    max_seq_len: int
 
 
 @dataclass
@@ -179,7 +184,12 @@ def build_app(state: AskState) -> FastAPI:
         return {
             "default": state.default_model,
             "models": [
-                {"id": k, "label": v.label, "description": v.description}
+                {
+                    "id": k,
+                    "label": v.label,
+                    "description": v.description,
+                    "max_seq_len": v.max_seq_len,
+                }
                 for k, v in state.models.items()
             ],
         }

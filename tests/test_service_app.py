@@ -101,6 +101,7 @@ def _make_state(
                 lock=asyncio.Lock(),
                 label="Stub",
                 description="test stub",
+                max_seq_len=1024,
             )
         },
         default_model="stub",
@@ -182,6 +183,7 @@ def test_api_models_returns_default_and_list(client) -> None:
     assert m["id"] == "stub"
     assert m["label"] == "Stub"
     assert "description" in m
+    assert m["max_seq_len"] == 1024
 
 
 def test_api_ask_done_carries_model_field(client) -> None:

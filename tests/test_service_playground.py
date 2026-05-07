@@ -89,6 +89,7 @@ def _make_state(generator: Generator | None = None) -> AskState:
                 lock=asyncio.Lock(),
                 label="Stub",
                 description="test stub",
+                max_seq_len=1024,
             )
         },
         default_model="stub",

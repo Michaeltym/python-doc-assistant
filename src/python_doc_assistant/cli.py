@@ -1093,6 +1093,7 @@ def serve_cmd(
             lock=asyncio.Lock(),
             label="Qwen 7B Q4 GGUF",
             description="4.7 GB · accurate · ~13 s/query (v4 production stack)",
+            max_seq_len=generator.n_ctx,
         )
     }
 
@@ -1109,6 +1110,7 @@ def serve_cmd(
             lock=asyncio.Lock(),
             label="TinyDocs v3.1",
             description="67 M params · fast but lossy · grounded RAG comparison backend",
+            max_seq_len=td_gen.model_max_seq_len,
         )
 
     static_root = frontend_dist if frontend_dist.is_dir() else None

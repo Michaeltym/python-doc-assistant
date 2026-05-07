@@ -27,6 +27,7 @@ export interface ModelInfo {
   id: string;
   label: string;
   description: string;
+  max_seq_len: number;
 }
 
 export interface ModelsResponse {
