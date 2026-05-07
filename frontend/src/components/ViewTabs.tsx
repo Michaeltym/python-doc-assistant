@@ -8,6 +8,7 @@ interface ViewTabsProps {
 const TABS: { id: View; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "playground", label: "Playground" },
+  { id: "compare", label: "Compare" },
 ];
 
 export function ViewTabs({ view, onChange }: ViewTabsProps) {

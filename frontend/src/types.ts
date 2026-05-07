@@ -42,7 +42,17 @@ export interface PlaygroundRequest {
   model?: string;
 }
 
-export type View = "chat" | "playground";
+export type View = "chat" | "playground" | "compare";
+
+export type CompareMode = "ask" | "playground";
+
+export interface CompareModelOutput {
+  text: string;
+  streaming: boolean;
+  meta?: DonePayload;
+  errored?: boolean;
+  errorMessage?: string;
+}
 
 export interface TokenPayload {
   text: string;
