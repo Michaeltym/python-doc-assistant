@@ -34,6 +34,15 @@ export interface ModelsResponse {
   models: ModelInfo[];
 }
 
+export interface PlaygroundRequest {
+  prompt: string;
+  max_tokens?: number;
+  temperature?: number;
+  model?: string;
+}
+
+export type View = "chat" | "playground";
+
 export interface TokenPayload {
   text: string;
 }

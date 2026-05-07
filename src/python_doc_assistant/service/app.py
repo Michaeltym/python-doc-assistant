@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 
 from python_doc_assistant.evaluation.retrieval_metrics import RetrievedChunk
 from python_doc_assistant.ingest.chunker import Chunk
+from python_doc_assistant.service.playground import PlaygroundRequest
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -187,6 +188,12 @@ def build_app(state: AskState) -> FastAPI:
     async def ask(request: AskRequest) -> EventSourceResponse:
         return EventSourceResponse(_ask_stream(state, request))
 
+    from python_doc_assistant.service.playground import _playground_stream
+
+    @app.post("/api/playground")
+    async def playground(request: PlaygroundRequest) -> EventSourceResponse:
+        return EventSourceResponse(_playground_stream(state, request))
+
     # MCP server (v4 sub-task 10) — Streamable HTTP at /mcp lets
     # Claude Code / Codex CLI use this RAG stack as a tool.
     app.mount("/mcp", mcp_server.streamable_http_app())
@@ -251,9 +258,7 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
     model_id = request.model or state.default_model
     entry = state.models.get(model_id)
     if entry is None:
-        yield error_event(
-            f"unknown model {model_id!r}; available: {sorted(state.models)!r}"
-        )
+        yield error_event(f"unknown model {model_id!r}; available: {sorted(state.models)!r}")
         return
 
     async with entry.lock:

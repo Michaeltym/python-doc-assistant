@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Final
 
-from python_doc_assistant.generation.interface import Answer, Generator
+from python_doc_assistant.generation.interface import Answer, Generator, RawCompletion
 from python_doc_assistant.generation.tinydocs.config import TinyDocsConfig
 from python_doc_assistant.ingest.chunker import Chunk
 from python_doc_assistant.prompts.grounded import build_grounded_prompt, parse_response
@@ -240,6 +240,61 @@ class TinyDocsGenerator(Generator):
                     break
                 generated.append(next_token.item())
             return generated
+
+    def generate_raw(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int = 256,
+        temperature: float = 0.0,
+    ) -> RawCompletion:
+        """Plain-text continuation: tokenizer.encode → _decode_loop → decode.
+
+        Bypasses the grounded prompt entirely so the v4 web-UI playground
+        can show off raw LM continuations. Useful precisely because the
+        v3.1 TinyDocs checkpoint is base-LM-quality and not yet
+        instruction-tuned — the playground exposes the underlying
+        language modelling without the grounded RAG mask.
+
+        Implementation outline:
+            1. start = time.perf_counter()
+            2. encoded = self.tokenizer.encode(prompt, add_bos=True, add_eos=False)
+            3. budget = self.model_max_seq_len - max_tokens
+               if len(encoded) > budget:
+                   encoded = encoded[-budget:]
+            4. previous_max = self.max_new_tokens
+               previous_temp = self.temperature
+               self.max_new_tokens = max_tokens
+               self.temperature = temperature
+               try:
+                   ids = self._decode_loop(encoded)
+               finally:
+                   self.max_new_tokens = previous_max
+                   self.temperature = previous_temp
+            5. text = self.tokenizer.decode(ids)
+            6. return RawCompletion(text=text, latency_seconds=time.perf_counter() - start)
+
+        Note: temperature > 0 is currently a no-op because `_decode_loop`
+        is greedy (argmax). A follow-up wires sampling through; the
+        signature accepts the parameter so the playground UI can already
+        send it.
+        """
+        start = time.perf_counter()
+        encoded = self.tokenizer.encode(prompt, add_bos=True, add_eos=False)
+        budget = self.model_max_seq_len - max_tokens
+        if len(encoded) > budget:
+            encoded = encoded[-budget:]
+        previous_max = self.max_new_tokens
+        previous_temp = self.temperature
+        self.max_new_tokens = max_tokens
+        self.temperature = temperature
+        try:
+            ids = self._decode_loop(encoded)
+        finally:
+            self.max_new_tokens = previous_max
+            self.temperature = previous_temp
+        text = self.tokenizer.decode(ids)
+        return RawCompletion(text=text, latency_seconds=time.perf_counter() - start)
 
     @staticmethod
     def _flatten_messages(messages: list[dict[str, str]]) -> str:

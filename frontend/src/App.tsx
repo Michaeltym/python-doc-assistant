@@ -1,10 +1,13 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatBox, type ChatBoxHandle } from "./components/ChatBox";
 import { HeaderBar } from "./components/HeaderBar";
 import { MessageList } from "./components/MessageList";
+import { PlaygroundView } from "./components/PlaygroundView";
 import { useAsk } from "./hooks/useAsk";
 import { useModels } from "./hooks/useModels";
-import type { DonePayload, Message } from "./types";
+import type { DonePayload, Message, View } from "./types";
+
+const VIEW_STORAGE_KEY = "pdr.view";
 
 function makeId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -12,10 +15,18 @@ function makeId() {
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [view, setView] = useState<View>(() => {
+    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+    return stored === "playground" ? "playground" : "chat";
+  });
   const { ask, cancel, inFlight } = useAsk();
   const { models, selectedModel, setSelectedModel } = useModels();
   const chatRef = useRef<ChatBoxHandle>(null);
   const docsVersion = import.meta.env.VITE_DOCS_VERSION ?? "3.12";
+
+  useEffect(() => {
+    localStorage.setItem(VIEW_STORAGE_KEY, view);
+  }, [view]);
 
   const handleSubmit = useCallback(
     (query: string) => {
@@ -60,13 +71,28 @@ export default function App() {
         models={models}
         selectedModel={selectedModel}
         onSelectModel={setSelectedModel}
+        view={view}
+        onSelectView={setView}
       />
-      <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4">
-        <MessageList messages={messages} onPickSuggestion={handlePickSuggestion} />
-      </main>
-      <div className="mx-auto w-full max-w-3xl">
-        <ChatBox inputRef={chatRef} onSubmit={handleSubmit} disabled={inFlight} onCancel={cancel} />
-      </div>
+      {view === "chat" ? (
+        <>
+          <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4">
+            <MessageList messages={messages} onPickSuggestion={handlePickSuggestion} />
+          </main>
+          <div className="mx-auto w-full max-w-3xl">
+            <ChatBox
+              inputRef={chatRef}
+              onSubmit={handleSubmit}
+              disabled={inFlight}
+              onCancel={cancel}
+            />
+          </div>
+        </>
+      ) : (
+        <main className="flex-1 overflow-y-auto">
+          <PlaygroundView selectedModel={selectedModel} />
+        </main>
+      )}
     </div>
   );
 }

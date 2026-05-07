@@ -41,6 +41,19 @@ class Answer:
     latency_seconds: float
 
 
+@dataclass(frozen=True)
+class RawCompletion:
+    """Output of Generator.generate_raw() — ungrounded text completion.
+
+    Fields:
+        text: continuation text the model produced for the prompt.
+        latency_seconds: wall-clock seconds spent generating.
+    """
+
+    text: str
+    latency_seconds: float
+
+
 # ------------------------------------------------------------------
 # Public ABC
 # ------------------------------------------------------------------
@@ -86,3 +99,32 @@ class Generator(ABC):
         Returns:
             Answer dataclass with text + citations + refusal flag + latency.
         """
+
+    def generate_raw(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int = 256,
+        temperature: float = 0.0,
+    ) -> RawCompletion:
+        """Continue ``prompt`` as plain text — no retrieval, no grounding.
+
+        Used by the v4 web-UI playground tab to show off a model's raw
+        text-generation behaviour (e.g. an SFT-light TinyDocs that
+        cannot follow instructions still has interesting LM continuations).
+
+        Default raises NotImplementedError. Subclasses opt in by
+        overriding; the eval pipeline only ever calls `generate()`.
+
+        Args:
+            prompt: raw text to continue from. No system message, no
+                chat template wrapping (each backend decides whether
+                its underlying API expects a chat or completion call).
+            max_tokens: decode budget.
+            temperature: 0.0 = greedy. > 0 enables sampling.
+
+        Returns:
+            ``RawCompletion(text, latency_seconds)``. ``text`` is the
+            model's continuation only — the prompt is NOT echoed back.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement generate_raw()")

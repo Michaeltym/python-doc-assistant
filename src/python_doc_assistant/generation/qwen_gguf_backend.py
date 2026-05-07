@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any, Final
 
-from python_doc_assistant.generation.interface import Answer, Generator
+from python_doc_assistant.generation.interface import Answer, Generator, RawCompletion
 from python_doc_assistant.ingest.chunker import Chunk
 from python_doc_assistant.prompts.grounded import build_grounded_prompt, parse_response
 from python_doc_assistant.retrieval.router import QueryType
@@ -175,3 +175,43 @@ class QwenGGUFGenerator(Generator):
         )
         text: str = res["choices"][0]["message"]["content"]
         return text
+
+    def generate_raw(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int = 256,
+        temperature: float = 0.0,
+    ) -> RawCompletion:
+        """Plain-text continuation via llama.cpp's `create_completion`.
+
+        This bypasses the chat template and the grounded prompt, so the
+        model behaves like a base / completion model. For instruction-
+        tuned Qwen the output still tends to be coherent text, but
+        without a chat-template wrapping the model is no longer in
+        "assistant turn" mode — useful for the playground side-by-side
+        with TinyDocs (which has no chat template at all).
+
+        Implementation outline:
+            1. import time
+            2. start = time.perf_counter()
+            3. res = self.llm.create_completion(
+                   prompt=prompt,
+                   max_tokens=max_tokens,
+                   top_p=self.top_p,
+                   temperature=temperature,
+               )
+            4. text: str = res["choices"][0]["text"]
+            5. return RawCompletion(text=text, latency_seconds=time.perf_counter() - start)
+        """
+        import time
+
+        start = time.perf_counter()
+        res = self.llm.create_completion(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            top_p=self.top_p,
+            temperature=temperature,
+        )
+        text: str = res["choices"][0]["text"]
+        return RawCompletion(text=text, latency_seconds=time.perf_counter() - start)

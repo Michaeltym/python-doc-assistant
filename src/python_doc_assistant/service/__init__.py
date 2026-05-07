@@ -9,6 +9,7 @@ Public exports:
 
 from python_doc_assistant.service.app import AskRequest, AskState, ModelEntry, build_app
 from python_doc_assistant.service.mcp import build_mcp_app
+from python_doc_assistant.service.playground import PlaygroundRequest
 from python_doc_assistant.service.streaming import (
     EVENT_DONE,
     EVENT_ERROR,
@@ -25,6 +26,7 @@ __all__ = [
     "EVENT_ERROR",
     "EVENT_TOKEN",
     "ModelEntry",
+    "PlaygroundRequest",
     "build_app",
     "build_mcp_app",
     "done_event",

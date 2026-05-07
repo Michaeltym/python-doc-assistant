@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { ModelInfo } from "../types";
+import type { ModelInfo, View } from "../types";
 import { ModelSelector } from "./ModelSelector";
+import { ViewTabs } from "./ViewTabs";
 
 type HealthStatus = "checking" | "ok" | "down";
 
@@ -61,19 +62,28 @@ interface HeaderBarProps {
   models: ModelInfo[];
   selectedModel: string | null;
   onSelectModel: (id: string) => void;
+  view: View;
+  onSelectView: (v: View) => void;
 }
 
-export function HeaderBar({ docsVersion, models, selectedModel, onSelectModel }: HeaderBarProps) {
+export function HeaderBar({
+  docsVersion,
+  models,
+  selectedModel,
+  onSelectModel,
+  view,
+  onSelectView,
+}: HeaderBarProps) {
   const status = useHealth();
   return (
     <header className="sticky top-0 z-10 border-b border-olive-700/60 bg-forest-950/70 px-4 py-3 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cream-50 shadow-md shadow-cream-50/10">
+      <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cream-50 shadow-md shadow-cream-50/10">
             <span className="font-mono text-sm font-bold text-forest-900">py</span>
           </div>
-          <div>
-            <h1 className="font-display text-sm font-bold tracking-wider text-cream-50 uppercase">
+          <div className="min-w-0">
+            <h1 className="truncate font-display text-sm font-bold tracking-wider text-cream-50 uppercase">
               python_doc_assistant
             </h1>
             <p className="font-mono text-[11px] tracking-wide text-cream-200/70">
@@ -82,6 +92,7 @@ export function HeaderBar({ docsVersion, models, selectedModel, onSelectModel }:
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <ViewTabs view={view} onChange={onSelectView} />
           <ModelSelector models={models} selectedId={selectedModel} onChange={onSelectModel} />
           <HealthPill status={status} />
         </div>
