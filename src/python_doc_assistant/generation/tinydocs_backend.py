@@ -281,18 +281,27 @@ class TinyDocsGenerator(Generator):
         """
         start = time.perf_counter()
         # The trained checkpoint has a fixed max_seq_len (e.g. 256 on
-        # the v3.1 SFT run). prompt_tokens + max_tokens must fit, with
-        # at least 1 token of prompt and 1 token of generation budget.
-        # Cap max_tokens at max_seq_len - 16 so we always leave room
-        # for the prompt; truncate the prompt to whatever budget remains.
-        max_tokens = max(1, min(max_tokens, self.model_max_seq_len - 16))
-        budget = max(1, self.model_max_seq_len - max_tokens)
+        # the v3.1 SFT run). prompt_tokens + max_tokens must fit.
+        #
+        # Policy: prompt takes precedence, generation budget is whatever
+        # is left over. The user typed the prompt; truncating it would
+        # change what the model is "continuing". The max_tokens slider
+        # is therefore an upper bound — actual output may be capped by
+        # the remaining context.
+        #
+        # If even the prompt cannot fit (very long prompt against a
+        # small-context checkpoint), keep the LAST `max_seq_len - 16`
+        # tokens so there is at least a small generation window.
         encoded = self.tokenizer.encode(prompt, add_bos=True, add_eos=False)
-        if len(encoded) > budget:
-            encoded = encoded[-budget:]
+        max_prompt_len = self.model_max_seq_len - 16
+        if len(encoded) > max_prompt_len:
+            encoded = encoded[-max_prompt_len:]
+        remaining = self.model_max_seq_len - len(encoded)
+        effective_max_tokens = max(1, min(max_tokens, remaining))
+
         previous_max = self.max_new_tokens
         previous_temp = self.temperature
-        self.max_new_tokens = max_tokens
+        self.max_new_tokens = effective_max_tokens
         self.temperature = temperature
         try:
             ids = self._decode_loop(encoded)
