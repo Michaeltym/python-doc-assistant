@@ -279,6 +279,8 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
     """
     import time
 
+    from python_doc_assistant.generation.interface import Answer
+    from python_doc_assistant.prompts.grounded import parse_response
     from python_doc_assistant.retrieval.query_rewriter import maybe_rewrite_query
     from python_doc_assistant.retrieval.router import classify
     from python_doc_assistant.service.streaming import done_event, error_event, token_event
@@ -300,7 +302,83 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             ]
             rewritten = maybe_rewrite_query(request.query, gen_chunks)
             qt = classify(request.query)
-            answer = entry.generator.generate(rewritten, gen_chunks, query_type=qt)
+        except Exception as exc:  # noqa: BLE001
+            yield error_event(str(exc))
+            return
+
+        # Try true token streaming first; fall back to a single
+        # full-text token event when the backend does not implement
+        # generate_stream (TinyDocs MVP, test stubs).
+        full_text = ""
+        used_streaming = True
+        try:
+            stream_iter = entry.generator.generate_stream(
+                rewritten, gen_chunks, query_type=qt
+            )
+        except NotImplementedError:
+            used_streaming = False
+            stream_iter = None
+
+        try:
+            if used_streaming and stream_iter is not None:
+                # Pump the synchronous llama-cpp iterator on a worker
+                # thread so the asyncio event loop stays free to
+                # actually flush each token event to the TCP socket.
+                # Without the threadpool, the sync `next()` call blocks
+                # the loop for the full inter-token latency, uvicorn
+                # cannot drain its write buffer between yields, and
+                # the entire response arrives at the client only after
+                # generation completes.
+                queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+                _SENTINEL = object()
+                loop = asyncio.get_running_loop()
+
+                def _drain() -> None:
+                    try:
+                        for delta in stream_iter:
+                            if delta:
+                                loop.call_soon_threadsafe(
+                                    queue.put_nowait, ("delta", delta)
+                                )
+                    except Exception as exc:  # noqa: BLE001
+                        loop.call_soon_threadsafe(
+                            queue.put_nowait, ("error", str(exc))
+                        )
+                    finally:
+                        loop.call_soon_threadsafe(
+                            queue.put_nowait, ("done", _SENTINEL)
+                        )
+
+                drain_fut = loop.run_in_executor(None, _drain)
+
+                while True:
+                    kind, payload = await queue.get()
+                    if kind == "done":
+                        break
+                    if kind == "error":
+                        yield error_event(str(payload))
+                        await drain_fut
+                        return
+                    delta = str(payload)
+                    full_text += delta
+                    yield token_event(delta)
+                await drain_fut
+
+                parsed = parse_response(full_text)
+                cited_chunk_ids = tuple(
+                    retrieved[i - 1].chunk_id
+                    for i in parsed.cited_indices
+                    if 1 <= i <= len(retrieved)
+                )
+                answer = Answer(
+                    text="" if parsed.refused else parsed.text,
+                    cited_chunk_ids=() if parsed.refused else cited_chunk_ids,
+                    refused=parsed.refused,
+                    latency_seconds=time.perf_counter() - start,
+                )
+            else:
+                answer = entry.generator.generate(rewritten, gen_chunks, query_type=qt)
+                yield token_event(answer.text or "[INSUFFICIENT-CONTEXT]")
         except Exception as exc:  # noqa: BLE001
             yield error_event(str(exc))
             return
@@ -339,7 +417,6 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             }
             for r in retrieved
         )
-        yield token_event(answer.text or "[INSUFFICIENT-CONTEXT]")
         yield done_event(
             refused=answer.refused,
             cited_chunks=cited_chunks,

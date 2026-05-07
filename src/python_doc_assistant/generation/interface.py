@@ -10,6 +10,7 @@ do not need to know which backend is active.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from python_doc_assistant.ingest.chunker import Chunk
@@ -99,6 +100,38 @@ class Generator(ABC):
         Returns:
             Answer dataclass with text + citations + refusal flag + latency.
         """
+
+    def generate_stream(
+        self,
+        query: str,
+        retrieved_chunks: list[Chunk],
+        *,
+        query_type: QueryType | None = None,
+    ) -> Iterator[str]:
+        """Yield incremental answer deltas as the model produces them.
+
+        Each yielded string is the **delta** since the previous yield —
+        not the cumulative answer — so a streaming HTTP layer can
+        forward each piece directly to the client. The model's raw
+        output is yielded verbatim, including any ``[N]`` citation
+        markers and refusal markers; the caller is responsible for
+        accumulating the deltas and running ``parse_response`` on the
+        final string to recover citations and the refusal flag.
+
+        Default raises NotImplementedError. Backends with native token
+        streaming (e.g. llama-cpp's ``create_chat_completion(stream=True)``)
+        should override; the FastAPI ``/api/ask`` endpoint falls back
+        to a single-event ``generate()`` call when this raises.
+
+        Args:
+            query: raw user query.
+            retrieved_chunks: top-K chunks from the retrieval layer.
+            query_type: classifier hint, same semantics as ``generate``.
+
+        Yields:
+            non-empty delta strings.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement generate_stream()")
 
     def generate_raw(
         self,

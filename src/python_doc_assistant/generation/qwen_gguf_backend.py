@@ -18,6 +18,7 @@ extra.)
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
 
@@ -147,6 +148,39 @@ class QwenGGUFGenerator(Generator):
             refused=parsed.refused,
             latency_seconds=time.perf_counter() - start_time,
         )
+
+    def generate_stream(
+        self,
+        query: str,
+        retrieved_chunks: list[Chunk],
+        *,
+        query_type: QueryType | None = None,
+    ) -> Iterator[str]:
+        """Stream incremental answer deltas from llama.cpp.
+
+        Builds the same grounded prompt as ``generate`` and forwards
+        ``stream=True`` to ``Llama.create_chat_completion``. Yields
+        each chunk's ``delta.content`` as soon as it arrives so the
+        FastAPI ``/api/ask`` endpoint can flush a token SSE event per
+        delta.
+
+        The yielded text is the **raw model output**, including any
+        ``[N]`` citation markers and the refusal sentinel — matching
+        ``generate``'s pre-parse string. The caller is responsible
+        for ``parse_response`` on the accumulated text.
+        """
+        prompt = build_grounded_prompt(query, retrieved_chunks, query_type=query_type)
+        for chunk in self.llm.create_chat_completion(
+            messages=prompt,
+            max_tokens=self.max_new_tokens,
+            top_p=self.top_p,
+            temperature=self.temperature,
+            stream=True,
+        ):
+            delta = chunk["choices"][0].get("delta", {})
+            piece = delta.get("content")
+            if piece:
+                yield piece
 
     def _call_model(self, prompt: list[dict[str, str]]) -> str:
         """Run the chat-completion call against the underlying Llama.

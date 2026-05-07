@@ -289,6 +289,64 @@ def test_api_ask_cited_chunks_carry_text_preview(client) -> None:
 
 
 # ------------------------------------------------------------------
+# Streaming path — generators that override generate_stream
+# ------------------------------------------------------------------
+
+
+@dataclass
+class StreamingStubGenerator(Generator):
+    """Yields three deltas, then exposes a sync generate() the test
+    suite never reaches under streaming mode."""
+
+    deltas: tuple[str, ...] = ("Hello ", "world ", "[1].")
+    temperature: float = 0.0
+    top_p: float = 1.0
+    max_new_tokens: int = 64
+
+    def generate(
+        self,
+        query: str,
+        retrieved_chunks: list[Chunk],
+        *,
+        query_type: QueryType | None = None,
+        stream: bool = False,
+    ) -> Answer:
+        # Sync path is the fallback; if it triggers under a streaming
+        # test, the test catches it via cited_chunk_ids mismatch.
+        return Answer(text="UNREACHABLE", cited_chunk_ids=(), refused=False, latency_seconds=0.0)
+
+    def generate_stream(
+        self,
+        query: str,
+        retrieved_chunks: list[Chunk],
+        *,
+        query_type: QueryType | None = None,
+    ):  # type: ignore[no-untyped-def]
+        for d in self.deltas:
+            yield d
+
+
+def test_api_ask_streams_token_events_per_delta() -> None:
+    """Backends that implement generate_stream produce one token event per delta."""
+    from fastapi.testclient import TestClient
+
+    state = _make_state(generator=StreamingStubGenerator())
+    app = build_app(state)
+    test_client = TestClient(app)
+
+    resp = test_client.post("/api/ask", json={"query": "hi"})
+    events = _parse_sse(resp.text)
+    token_payloads = [p for n, p in events if n == "token"]
+    # Three deltas → three token events.
+    assert len(token_payloads) == 3
+    assert [p["text"] for p in token_payloads] == ["Hello ", "world ", "[1]."]
+    # parse_response on the joined text should still resolve [1] → cited.
+    done = [p for n, p in events if n == "done"][0]
+    assert done["cited_chunks"][0]["chunk_id"] == "symbol:foo"
+    assert done["refused"] is False
+
+
+# ------------------------------------------------------------------
 # /api/ask validation
 # ------------------------------------------------------------------
 

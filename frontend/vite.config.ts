@@ -12,6 +12,16 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
+        // SSE: force the upstream to send raw bytes (no gzip / br)
+        // so the proxy does not buffer chunks waiting for the next
+        // compression boundary. Without this, /api/ask streams the
+        // whole token list at once when the frontend goes through
+        // `npm run dev`.
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.setHeader("Accept-Encoding", "identity");
+          });
+        },
       },
       "/health": {
         target: "http://127.0.0.1:8000",

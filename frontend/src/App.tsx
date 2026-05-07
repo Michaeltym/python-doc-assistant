@@ -47,10 +47,16 @@ export default function App() {
         setMessages((prev) => prev.map((m) => (m.id === assistantMsg.id ? { ...m, ...patch } : m)));
       };
 
+      const appendAssistantText = (delta: string) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantMsg.id ? { ...m, text: m.text + delta } : m)),
+        );
+      };
+
       void ask(
         { query, model: selectedModel ?? undefined },
         {
-          onToken: (text) => updateAssistant({ text }),
+          onToken: (delta) => appendAssistantText(delta),
           onDone: (meta: DonePayload) => updateAssistant({ meta, streaming: false }),
           onError: (message) =>
             updateAssistant({

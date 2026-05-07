@@ -98,11 +98,14 @@ export function CompareView({ models }: CompareViewProps) {
     void run(
       { mode, modelIds: orderedSelection.map((m) => m.id), body },
       {
-        onToken: (modelId, text) => {
-          setOutputs((prev) => ({
-            ...prev,
-            [modelId]: { ...(prev[modelId] ?? emptyOutput()), text, streaming: true },
-          }));
+        onToken: (modelId, delta) => {
+          setOutputs((prev) => {
+            const cur = prev[modelId] ?? emptyOutput();
+            return {
+              ...prev,
+              [modelId]: { ...cur, text: cur.text + delta, streaming: true },
+            };
+          });
         },
         onDone: (modelId, meta) => {
           setOutputs((prev) => ({
