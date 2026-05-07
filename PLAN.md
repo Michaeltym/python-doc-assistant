@@ -77,8 +77,7 @@ score merge / rerank        (v2)
 top-K chunks
   ↓
 Generator backend (pluggable)
-  ├─ qwen       (default baseline, v1)
-  ├─ smollm     (fallback)
+  ├─ qwen       (default baseline, v1; quantised GGUF in v4)
   └─ tinydocs   (homegrown, v3)
   ↓
 grounded answer + citations
@@ -329,8 +328,8 @@ python-doc-assistant/
 │       │   └── rerank.py               # v2
 │       ├── generation/
 │       │   ├── interface.py            # Generator ABC
-│       │   ├── qwen_backend.py         # v1
-│       │   ├── smollm_backend.py       # fallback
+│       │   ├── qwen_backend.py         # v1 (transformers + MPS)
+│       │   ├── qwen_gguf_backend.py    # v4 (llama-cpp-python, quantised default)
 │       │   └── tinydocs_backend.py     # v3
 │       ├── prompts/
 │       │   └── grounded.py
@@ -364,12 +363,18 @@ python-doc-assistant/
 │   ├── v1-qwen-grounded.md
 │   ├── v2-ablation.md
 │   ├── v3-tinydocs-vs-qwen.md
-│   └── runs/                       # machine-readable results
+│   └── runs/                       # machine-readable results — committed (see policy below)
 │       └── <YYYY-MM-DDTHH-MM-SS>-<tag>/   # second-level timestamp prevents same-day overwrite
 │           ├── results.json
 │           └── per_query.jsonl
 └── tests/
 ```
+
+**Commit policy for `experiments/runs/`:**
+
+- `results.json` and `per_query.jsonl` (and v1+ `human_scores.jsonl`) are **committed** into git. Each run directory is an immutable experiment snapshot — being able to `git log` back to a numerical baseline is worth the small repo bloat.
+- Anything that grows fast or is hard to interpret without external tooling — training logs, tensorboard event files, model-generated raw responses larger than ~1 MB — stays out of the run directory or is gitignored on a case-by-case basis.
+- `data/` is gitignored in full; do not commit corpora, indexes, checkpoints. `experiments/` stays committed because the artifacts there are the project's reproducibility evidence.
 
 **`pyproject.toml` dependency structure (split into extras by stage)**:
 
