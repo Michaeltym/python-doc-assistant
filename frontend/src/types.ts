@@ -28,6 +28,11 @@ export interface TraceChunk {
   cited: boolean;
 }
 
+export interface PromptMessage {
+  role: string;
+  content: string;
+}
+
 export interface DonePayload {
   refused: boolean;
   cited_chunks: CitedChunk[];
@@ -38,6 +43,7 @@ export interface DonePayload {
   // on /api/playground (no retrieval).
   query_type?: string | null;
   retrieved?: TraceChunk[];
+  prompt_messages?: PromptMessage[];
 }
 
 export interface ModelInfo {

@@ -52,6 +52,7 @@ def done_event(
     model: str | None = None,
     query_type: str | None = None,
     retrieved: tuple[dict[str, object], ...] = (),
+    prompt_messages: tuple[dict[str, str], ...] = (),
 ) -> dict[str, str]:
     """Build the terminal SSE event with metadata.
 
@@ -75,11 +76,18 @@ def done_event(
             whichever subset the generator referenced. Lets the trace
             panel show the full retrieve-then-cite funnel without an
             extra round trip.
+        prompt_messages: the actual chat-template messages sent to
+            the generator (``[{"role": "system" | "user", "content":
+            "..."}, ...]``). Surfaced in the trace's `[2.5] augment`
+            stage so the user can read the system prompt + injected
+            chunks + question verbatim — the strongest pedagogical
+            artifact in the RAG pipeline.
 
     Returns:
         ``{"event": "done", "data": "<json>"}`` where the JSON payload
         contains ``refused``, ``cited_chunks``, ``latency_seconds``,
-        ``rewritten_query``, ``model``, ``query_type``, ``retrieved``.
+        ``rewritten_query``, ``model``, ``query_type``, ``retrieved``,
+        ``prompt_messages``.
     """
     return {
         "event": EVENT_DONE,
@@ -92,6 +100,7 @@ def done_event(
                 "model": model,
                 "query_type": query_type,
                 "retrieved": list(retrieved),
+                "prompt_messages": list(prompt_messages),
             }
         ),
     }

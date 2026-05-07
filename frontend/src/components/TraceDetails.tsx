@@ -97,6 +97,26 @@ export function TraceDetails({ meta, query }: TraceDetailsProps) {
           </div>
         )}
 
+        {/* Stage 2.5 — augment (the actual prompt sent to the LLM) */}
+        {meta.prompt_messages && meta.prompt_messages.length > 0 && (
+          <details className="rounded border border-olive-700/60 bg-forest-950/40 px-2 py-1">
+            <summary className="cursor-pointer text-cream-200/60 hover:text-cream-100">
+              [2.5] augment · {meta.prompt_messages.length} message
+              {meta.prompt_messages.length === 1 ? "" : "s"} sent to model
+            </summary>
+            <div className="mt-2 flex flex-col gap-2">
+              {meta.prompt_messages.map((m, i) => (
+                <div key={i} className="flex flex-col gap-0.5">
+                  <span className="text-cream-200/40">{m.role}:</span>
+                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded border border-olive-700/50 bg-forest-950/70 px-2 py-1 text-[10.5px] leading-relaxed text-cream-100">
+                    {m.content}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+
         {/* Stage 3 — generate */}
         <div className="flex flex-col gap-0.5">
           <span className="text-cream-200/50">[3] generate</span>

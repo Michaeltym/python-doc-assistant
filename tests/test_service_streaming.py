@@ -147,6 +147,24 @@ def test_done_event_trace_fields_default_to_empty() -> None:
     payload = json.loads(ev["data"])
     assert payload["query_type"] is None
     assert payload["retrieved"] == []
+    assert payload["prompt_messages"] == []
+
+
+def test_done_event_carries_prompt_messages() -> None:
+    ev = done_event(
+        refused=False,
+        cited_chunks=(),
+        latency_seconds=0.1,
+        prompt_messages=(
+            {"role": "system", "content": "You are a Python docs assistant."},
+            {"role": "user", "content": "[1] json.loads ...\n\nQuestion: what is json.loads"},
+        ),
+    )
+    payload = json.loads(ev["data"])
+    assert len(payload["prompt_messages"]) == 2
+    assert payload["prompt_messages"][0]["role"] == "system"
+    assert payload["prompt_messages"][1]["role"] == "user"
+    assert "json.loads" in payload["prompt_messages"][1]["content"]
 
 
 # ------------------------------------------------------------------

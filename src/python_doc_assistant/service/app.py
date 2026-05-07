@@ -280,7 +280,7 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
     import time
 
     from python_doc_assistant.generation.interface import Answer
-    from python_doc_assistant.prompts.grounded import parse_response
+    from python_doc_assistant.prompts.grounded import build_grounded_prompt, parse_response
     from python_doc_assistant.retrieval.query_rewriter import maybe_rewrite_query
     from python_doc_assistant.retrieval.router import classify
     from python_doc_assistant.service.streaming import done_event, error_event, token_event
@@ -417,6 +417,15 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             }
             for r in retrieved
         )
+        # Re-build the grounded prompt for the trace panel. This is
+        # the same call shape the generator made internally; the
+        # function is pure and cheap (string concatenation), so
+        # paying the call twice is preferable to threading a
+        # `prompt_messages` field back through the Generator ABC.
+        prompt_messages = tuple(
+            {"role": str(m.get("role", "")), "content": str(m.get("content", ""))}
+            for m in build_grounded_prompt(rewritten, gen_chunks, query_type=qt)
+        )
         yield done_event(
             refused=answer.refused,
             cited_chunks=cited_chunks,
@@ -425,4 +434,5 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             model=model_id,
             query_type=qt.value,
             retrieved=retrieved_payload,
+            prompt_messages=prompt_messages,
         )
