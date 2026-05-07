@@ -1,4 +1,4 @@
-# python-doc-assistant — Summary (English)
+# python-doc-assistant — Summary
 
 A from-scratch Python documentation RAG assistant. v0 → v4 ships a
 production stack on Qwen 7B Q4 GGUF; v3 is a research side-track that
