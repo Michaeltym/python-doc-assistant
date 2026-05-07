@@ -244,11 +244,20 @@ auto-mounts `frontend/dist/` at `/` when the directory exists.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/ask` | Body `{"query": "...", "k": 5, "rerank": true, "hyde": true, "model": "qwen-7b-gguf"}` → SSE stream of `token` + `done` events. `model` is optional and falls back to the server default. |
-| `GET` | `/api/models` | List of registered models + the server's default; the React UI fetches this on mount and renders a dropdown. |
-| `POST` | `/mcp/mcp` | MCP Streamable HTTP transport. Exposes the `ask` tool to MCP-aware clients (Claude Code, Codex CLI). |
+| `POST` | `/api/ask` | Body `{"query": "...", "k": 5, "rerank": true, "hyde": true, "model": "qwen-7b-gguf"}` → SSE stream. Qwen GGUF emits one `token` event per generated delta (true token streaming via `llama-cpp` `stream=True` pumped through a worker thread); other backends fall back to a single full-text `token` event. Always ends with a `done` event carrying `cited_chunks` (with `text_preview`), `retrieved` (full top-K with scores + `cited` flag), `query_type`, latency, and any rewritten query. `model` is optional and falls back to the server default. |
+| `POST` | `/api/playground` | Body `{"prompt": "...", "max_tokens": 256, "temperature": 0.0, "model": "..."}` → ungrounded `generate_raw` continuation (no retrieval, no chat template). Powers the Playground tab. |
+| `GET` | `/api/models` | List of registered models + the server's default; each entry includes `max_seq_len` so the UI can clamp per-model sliders. |
+| `POST` | `/mcp/mcp` | MCP Streamable HTTP transport. Exposes the `ask` tool (full RAG → markdown answer + Sources) and the `search` tool (retrieve-only, no LLM, returns top-K chunks as markdown blocks). |
 | `GET` | `/health` | Liveness check, `{"status": "ok"}`. |
 | `GET` | `/` | Static React UI when `frontend/dist/` is mounted. |
+
+**UI tabs:** the React frontend has three views — `Chat` (grounded
+RAG with token streaming, citation pills with hover preview, and an
+expandable per-message **trace** showing the full route → retrieve →
+generate pipeline), `Playground` (free-form text continuation), and
+`Compare` (sends one prompt to N models in parallel, with a toggle
+between RAG and Raw mode, so the same query can show "small models
+without RAG" and "small models even with RAG" side-by-side).
 
 **Optional demo models — TinyDocs v3.1 (base + SFT):**
 
@@ -341,19 +350,36 @@ Claude Desktop (stdio only — bridge through `mcp-remote`):
 }
 ```
 
-The server exposes a single tool — `ask(query, k=5, rerank=true,
-hyde=true)` — that runs the same retrieve → rewrite → generate
-pipeline as `/api/ask` and returns a markdown answer with a Sources
-section linking to docs.python.org. The MCP tool calls and `/api/ask`
-share the same Llama instance, queued behind a single asyncio.Lock.
+The server exposes two tools:
+
+- `ask(query, k=5, rerank=true, hyde=true, model=None)` — runs the
+  same retrieve → rewrite → generate pipeline as `/api/ask` and
+  returns a markdown answer with a `Sources` section linking back to
+  docs.python.org. Costs whatever a normal `/api/ask` call costs.
+  MCP `ask` and `/api/ask` share the same Llama instance, queued
+  behind the same per-model `asyncio.Lock`.
+- `search(query, k=5)` — retrieve-only, **no LLM call**. Returns the
+  top-K chunks as markdown blocks (rank, score, chunk_id,
+  docs.python.org URL, body inside a fenced code block, body capped
+  at 1500 chars). Use this when the caller wants raw evidence to
+  read directly (Claude Code resolving "where is X documented?"
+  without spending generator tokens) or when inspecting what the
+  retrieval layer returns. Near-instant — does not contend with
+  generator locks.
 
 `pdr serve --help` lists every flag (retriever / rerank / HyDE / port
 / host / frontend-dist).
 
-The server holds a single QwenGGUFGenerator + retrieve_fn for the
-process lifetime. Concurrent /api/ask requests serialise behind an
-`asyncio.Lock` because llama-cpp-python's `Llama` is not thread-safe;
-two simultaneous clients queue rather than racing.
+The server holds the loaded generators + a single retrieve_fn for
+the process lifetime. Each generator has its own `asyncio.Lock`
+(llama-cpp-python's `Llama` is not thread-safe; concurrent
+`/api/ask` requests against the same model queue rather than race),
+but different models can stream concurrently. Token streaming uses
+a worker thread to pump llama-cpp's synchronous iterator so the
+asyncio event loop stays free to flush each token event to the
+client as it arrives — without that thread, sync `next()` blocks
+the event loop for the full inter-token latency and the entire
+response only reaches the client after generation completes.
 
 ---
 
