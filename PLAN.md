@@ -272,11 +272,11 @@ The hit definition forks on `match_policy`:
 
 - `"exact"`: full URLs strictly equal
 - `"strip_anchor"` (default): drop everything after `#` on both sides, then compare for equality — `library/pathlib.html#Path.read_text` matches `library/pathlib.html`
-- `"prefix"`: a chunk URL that starts with the expected URL counts as a match
+- `"prefix"`: **path-prefix** match. Expected URL must end in `.html` or `/`; chunk URL counts only if it equals the expected URL or extends past a `#` or `/`. Avoids `library/pathlib` accidentally matching a future `library/pathlibx.html`.
 
 Metric layers:
 
-- Retrieval layer: Recall@{5,10}, MRR
+- Retrieval layer: Recall@{5,10}, MRR — reported both **aggregate** and **per `query_type`** (`identifier` / `natural_language` / `comparison` / `howto` / `out_of_scope`); aggregate hides the per-type spread that the v1 generator needs to act on
 - Generation layer: 4-tier manual scoring (from v1 onward) → LLM-as-judge (from v2 onward)
 - Refusal layer: refusal rate on out-of-scope queries
 

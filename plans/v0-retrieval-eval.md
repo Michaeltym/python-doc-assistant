@@ -72,6 +72,11 @@ File: `src/python_doc_assistant/ingest/fetch_docs.py`
 - Compute the archive sha256 and take the first 12 chars as `<sha_short>`
 - Unpack into `data/docs/<DOCS_VERSION>/<sha_short>/` (e.g. `data/docs/3.12/a1b2c3d4e5f6/`) — **corpora with different shas do not overwrite each other**, old subdirectories are preserved, old evals can always be replayed against the original corpus
 - `data/docs/<DOCS_VERSION>/current.txt` records the currently active sha
+- **HTTP fetch defaults (locked in for v0):**
+  - timeout: 60 seconds per request
+  - retries: 3 with exponential backoff (`1s → 2s → 4s`)
+  - User-Agent: `python-doc-assistant/0.1 (+local)`
+  - The archive is tens of megabytes; default `requests` settings without an explicit timeout can hang indefinitely on a flaky link
 - **Idempotent + overwrite-protection rules:**
   - Same archive (matching sha) re-ingested → skip, exit 0
   - Sha conflict (newly downloaded sha differs from `current.txt`) → **error out by default**; switching versions requires `--force-switch` (creates a new `<sha_short>` subdirectory and updates `current.txt`)
@@ -180,12 +185,20 @@ Field notes:
 
 All chunks are written to `data/chunks/<DOCS_VERSION>/<sha_short>/chunks.jsonl` (JSON Lines; shares the same `<sha_short>` as docs).
 
+**Error handling for malformed input (locked in for v0):**
+
+Per `AGENTS.md` "do not hide failures": when the chunker hits a symbol with no resolvable anchor / no docstring / a missing signature, it logs `WARN` and writes a row to `data/chunks/<DOCS_VERSION>/<sha_short>/parse_errors.jsonl` (one JSON per error: `{"symbol": ..., "uri": ..., "reason": ...}`). The whole batch does **not** abort. Errors are visible at the artifact level so a future Sphinx-theme upgrade can diff `parse_errors.jsonl` instead of silently shrinking the chunk count.
+
+Acceptance gate: `len(parse_errors.jsonl) / total_symbols < 1%`. Above that threshold the chunker is treated as broken (likely a Sphinx markup change) and the run blocks.
+
 **Acceptance criteria:**
 
 - `chunks.jsonl` has 5000+ entries
 - Reasonable symbol/section ratio (symbols expected to dominate)
 - All required fields are present
 - `chunk_id` is globally unique (verified by enumeration in unit tests)
+- `parse_errors.jsonl` exists (may be empty); error rate `< 1%` of total symbols
+- Fixture HTML test asserts `class="py method"` / `class="py class"` / `class="py function"` are still recognized — early signal if upstream Sphinx theme changes
 
 ### 4. Symbol index — exact + fuzzy (multi-candidate)
 
@@ -317,7 +330,7 @@ For each query, take Top-K and decide based on `match_policy`:
 
 - `"exact"`: full URL strict equality
 - `"strip_anchor"` (default): strip everything after `#` on both sides and compare for equality (`library/pathlib.html#pathlib.Path.read_text` matches `library/pathlib.html`)
-- `"prefix"`: chunk URL starts with the expected URL counts as a match (for permissive scenarios like "the entire pathlib module counts as correct")
+- `"prefix"`: **path-prefix** match (not literal string prefix). The expected URL must end in `.html` or `/`; a chunk URL counts as a match only if it equals the expected URL or extends it past a `#` anchor or `/` boundary. So expected `library/pathlib.html` matches `library/pathlib.html` and `library/pathlib.html#Path.read_text`, but does **not** match a (hypothetical) `library/pathlibx.html`.
 
 **Metric definitions (Recall@K and MRR both branch on `match_policy`):**
 
@@ -325,8 +338,27 @@ For each query, take Top-K and decide based on `match_policy`:
 - **MRR:**
   - `match_policy: "any"` → use the rank of the **first** matching item in top-K; RR = 0 if nothing hits (standard MRR)
   - `match_policy: "all"` → use the rank at which **all expected items are covered** (i.e. the rank where the last expected item appears); RR = 0 if any expected item is missing from top-K
+  - **`all`-policy MRR is not directly comparable to `any`-policy MRR.** A query with two expected items and the second hit at rank 4 yields RR = 0.25, which looks much worse than an `any`-policy run hitting rank 1 → 1.0. Tables in `experiments/v0-bm25-only.md` must keep one policy per row, never mix.
 
 Compute Recall@5, Recall@10, MRR.
+
+**Per-type metric breakdown (required):**
+
+`results.json` carries both an aggregate block and a per-`query_type` breakdown. `identifier` and `natural_language` queries typically score very differently; mixing them in the aggregate hides the failure modes the v1 generator will need to fix.
+
+```json
+{
+  "aggregate": { "recall@5": 0.78, "recall@10": 0.85, "mrr": 0.61 },
+  "per_type": {
+    "identifier":       { "recall@5": 0.92, "recall@10": 0.95, "mrr": 0.81, "n": 12 },
+    "natural_language": { "recall@5": 0.65, "recall@10": 0.74, "mrr": 0.45, "n": 15 },
+    "comparison":       { "recall@5": 0.60, "recall@10": 0.70, "mrr": 0.30, "n":  3 },
+    "howto":            { "recall@5": 0.75, "recall@10": 0.80, "mrr": 0.55, "n":  4 }
+  }
+}
+```
+
+Each per-type entry includes `n` so a small bucket (e.g. `n=3`) can be flagged in the narrative as having wide confidence intervals.
 
 **Output:**
 
