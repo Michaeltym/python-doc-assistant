@@ -98,6 +98,17 @@ flowchart TB
 Everything else (`router.classify`, `Answer`, `SSE stream`) is plumbing
 around the RAG triangle.
 
+**Why no BM25 / SymbolIndex in this chart:** v0 ships
+`BM25Index` (lexical) and `SymbolIndex` (exact + fuzzy on canonical
+symbol names); v2 layers `Hybrid (RRF)` on top of BM25 + dense to
+fuse rankings. v2 ablation showed `Hybrid + Rerank` (Recall@5 0.89)
+just barely beats `Dense + Rerank + HyDE` while doubling the
+retrieval surface. v4 picked the simpler stack — `--retriever=dense
+--rerank --hyde` — so production runs only the dense path. BM25 and
+SymbolIndex remain available as `--retriever=bm25 / symbol+bm25 /
+hybrid-rrf` flags for ablation re-runs but are not on the v4
+critical path. See `experiments/v2-ablation.md` for the numbers.
+
 Stage notes:
 
 1. **Classify.** Heuristic router buckets the query into
