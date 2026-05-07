@@ -280,8 +280,14 @@ class TinyDocsGenerator(Generator):
         send it.
         """
         start = time.perf_counter()
+        # The trained checkpoint has a fixed max_seq_len (e.g. 256 on
+        # the v3.1 SFT run). prompt_tokens + max_tokens must fit, with
+        # at least 1 token of prompt and 1 token of generation budget.
+        # Cap max_tokens at max_seq_len - 16 so we always leave room
+        # for the prompt; truncate the prompt to whatever budget remains.
+        max_tokens = max(1, min(max_tokens, self.model_max_seq_len - 16))
+        budget = max(1, self.model_max_seq_len - max_tokens)
         encoded = self.tokenizer.encode(prompt, add_bos=True, add_eos=False)
-        budget = self.model_max_seq_len - max_tokens
         if len(encoded) > budget:
             encoded = encoded[-budget:]
         previous_max = self.max_new_tokens
