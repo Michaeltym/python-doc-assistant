@@ -12,7 +12,12 @@ from python_doc_assistant.generation.interface import Answer, Generator
 from python_doc_assistant.ingest.chunker import Chunk
 from python_doc_assistant.retrieval.router import QueryType
 from python_doc_assistant.service.app import AskState, ModelEntry
-from python_doc_assistant.service.mcp import _ask_handler, build_mcp_app, build_mcp_server
+from python_doc_assistant.service.mcp import (
+    _ask_handler,
+    _search_handler,
+    build_mcp_app,
+    build_mcp_server,
+)
 
 # ------------------------------------------------------------------
 # Fixtures (mirror tests/test_service_app.py)
@@ -247,3 +252,93 @@ def test_build_mcp_server_ask_tool_input_schema() -> None:
     assert "hyde" in properties
     # `query` is required.
     assert "query" in schema.get("required", [])
+
+
+# ------------------------------------------------------------------
+# _search_handler — retrieve-only happy path + edge cases
+# ------------------------------------------------------------------
+
+
+def test_search_handler_returns_one_block_per_retrieved_chunk() -> None:
+    state = _make_state(retrieved_ids=("symbol:foo", "symbol:bar", "symbol:baz"))
+    out = asyncio.run(_search_handler(state, query="anything", k=3))
+    # Each chunk should produce a "## [N] ..." block headed by its rank.
+    assert "## [1]" in out
+    assert "## [2]" in out
+    assert "## [3]" in out
+    # All three chunk_ids should appear in inline-code form.
+    assert "`symbol:foo`" in out
+    assert "`symbol:bar`" in out
+    assert "`symbol:baz`" in out
+
+
+def test_search_handler_includes_canonical_url() -> None:
+    state = _make_state()
+    out = asyncio.run(_search_handler(state, query="json"))
+    assert "https://docs.python.org/3.12/library/foo.html" in out
+
+
+def test_search_handler_truncates_long_chunk_text() -> None:
+    big_chunk = _chunk("symbol:big")
+    big_chunk = Chunk(
+        chunk_id=big_chunk.chunk_id,
+        chunk_type=big_chunk.chunk_type,
+        docs_version=big_chunk.docs_version,
+        title=big_chunk.title,
+        text="A" * 5000,
+        symbols=big_chunk.symbols,
+        canonical_url=big_chunk.canonical_url,
+        anchor=big_chunk.anchor,
+        parent_module=big_chunk.parent_module,
+        source_path=big_chunk.source_path,
+        source_hash=big_chunk.source_hash,
+    )
+    state = _make_state(chunks=[big_chunk], retrieved_ids=("symbol:big",))
+    out = asyncio.run(_search_handler(state, query="anything", k=1))
+    assert "…" in out
+    # Full body must NOT appear verbatim.
+    assert "A" * 5000 not in out
+
+
+def test_search_handler_rejects_invalid_k() -> None:
+    state = _make_state()
+    too_low = asyncio.run(_search_handler(state, query="q", k=0))
+    too_high = asyncio.run(_search_handler(state, query="q", k=99))
+    assert "Invalid k" in too_low
+    assert "Invalid k" in too_high
+
+
+def test_search_handler_returns_empty_marker_when_no_chunks() -> None:
+    @dataclass
+    class _EmptyState:
+        retrieve_fn: Any
+        chunks_by_id: dict[str, Chunk]
+
+    def empty_retrieve(_query: str, _k: int) -> list[RetrievedChunk]:
+        return []
+
+    state = _make_state()
+    state.retrieve_fn = empty_retrieve  # type: ignore[misc]
+    out = asyncio.run(_search_handler(state, query="nothing matches", k=5))
+    assert "No chunks retrieved" in out
+
+
+def test_build_mcp_server_registers_search_tool() -> None:
+    state = _make_state()
+    server = build_mcp_server(state)
+    tools = asyncio.run(server.list_tools())
+    names = {t.name for t in tools}
+    assert "search" in names
+
+
+def test_build_mcp_server_search_tool_input_schema() -> None:
+    state = _make_state()
+    server = build_mcp_server(state)
+    tools = asyncio.run(server.list_tools())
+    search = next(t for t in tools if t.name == "search")
+    properties = search.inputSchema["properties"]
+    assert "query" in properties
+    assert "k" in properties
+    # search does not need rerank / hyde / model.
+    assert "rerank" not in properties
+    assert "model" not in properties

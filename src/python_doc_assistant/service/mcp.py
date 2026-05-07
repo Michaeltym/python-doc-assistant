@@ -1,9 +1,16 @@
 """MCP server for python-doc-assistant (v4 sub-task 10).
 
-Exposes a single tool — ``ask`` — over Streamable HTTP transport,
-mounted at ``/mcp`` on the existing FastAPI app. Lets Claude Code /
-Codex CLI use this RAG stack as a tool: they discover the tool, call
-it with a query, and receive a grounded markdown answer + citations.
+Exposes two tools over Streamable HTTP transport, mounted at ``/mcp``
+on the existing FastAPI app:
+
+* ``ask`` — full RAG: retrieve → grounded generate → markdown answer
+  with [N] citations and a Sources list. Uses the loaded LLM, so it
+  costs whatever a normal /api/ask call costs.
+* ``search`` — retrieve-only: returns the top-K chunks with scores,
+  URLs, and inline body text. **No LLM call**, near-instant. Use this
+  when the caller wants raw evidence to read directly (Claude Code
+  reading docs without burning generator tokens) or when you want to
+  inspect what the retrieval layer returns.
 
 Why HTTP transport instead of stdio:
     The MCP "stdio" pattern spawns a fresh Python process per session,
@@ -144,6 +151,63 @@ async def _ask_handler(
 
 
 # ------------------------------------------------------------------
+# search tool — retrieve-only, no LLM
+# ------------------------------------------------------------------
+
+
+_SEARCH_CHUNK_TEXT_MAX_CHARS = 1500
+
+
+async def _search_handler(state: AskState, query: str, k: int = 5) -> str:
+    """Run only the retrieval stage and return the top-K chunks as markdown.
+
+    Args:
+        state: shared AskState with retrieve_fn + chunks_by_id.
+        query: user query (NL or symbol).
+        k: top-K chunk count (1-20).
+
+    Returns:
+        Markdown blocks, one per retrieved chunk, ordered by retriever
+        rank. Each block carries the rank, score, chunk_id, title,
+        canonical docs.python.org URL, and the chunk body inside a
+        fenced code block (truncated to
+        ``_SEARCH_CHUNK_TEXT_MAX_CHARS`` chars + ellipsis when longer
+        — keeps the response sane on natural-language section_chunks).
+
+    Why no lock:
+        ``state.retrieve_fn`` and ``state.chunks_by_id`` are read-only
+        at request time (built once at startup). No model lock is
+        needed; concurrent search calls do not contend.
+    """
+    if k < 1 or k > 20:
+        return f"*Invalid k={k}: must be between 1 and 20.*"
+
+    retrieved = state.retrieve_fn(query, k)
+    if not retrieved:
+        return "*No chunks retrieved for this query.*"
+
+    blocks: list[str] = []
+    for r in retrieved:
+        chunk = state.chunks_by_id.get(r.chunk_id)
+        if chunk is None:
+            continue
+        url = f"https://docs.python.org/{chunk.docs_version}/{chunk.canonical_url}"
+        body = chunk.text
+        if len(body) > _SEARCH_CHUNK_TEXT_MAX_CHARS:
+            body = body[: _SEARCH_CHUNK_TEXT_MAX_CHARS - 1].rstrip() + "…"
+        blocks.append(
+            f"## [{r.rank}] {chunk.title} — score {r.score:.2f} — `{r.chunk_id}`\n"
+            f"{url}\n\n"
+            f"```\n{body}\n```"
+        )
+
+    if not blocks:
+        return "*Retrieved chunks were not found in the index — internal lookup failure.*"
+
+    return "\n\n".join(blocks)
+
+
+# ------------------------------------------------------------------
 # ASGI app factory
 # ------------------------------------------------------------------
 
@@ -216,5 +280,25 @@ def build_mcp_server(state: AskState) -> Any:
         or "tinydocs"). When omitted, the server's default is used.
         """
         return await _ask_handler(state, query, k, rerank, hyde, model)
+
+    @mcp_server.tool()
+    async def search(query: str, k: int = 5) -> str:
+        """Retrieve top-K Python stdlib doc chunks for a query — no LLM.
+
+        Returns the raw retrieved chunks as markdown blocks (rank,
+        score, chunk_id, docs.python.org URL, and the chunk body) so
+        the caller can read the docs directly. Faster and cheaper than
+        ``ask`` because it skips generation entirely.
+
+        Use this when:
+        - You want to read the docs verbatim (Claude Code resolving
+          "where is X documented?" without spending generator tokens).
+        - You want to inspect what the retrieval layer returns for a
+          query (debugging or doc-grep workflows).
+
+        Use ``ask`` instead when you want a synthesised answer with
+        inline [N] citations.
+        """
+        return await _search_handler(state, query, k)
 
     return mcp_server
