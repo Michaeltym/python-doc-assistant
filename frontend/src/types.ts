@@ -13,6 +13,10 @@ export interface CitedChunk {
   chunk_id: string;
   title: string;
   url: string;
+  // Single-line, whitespace-collapsed snippet (~280 chars, ellipsised
+  // if truncated). Surfaced as a hover preview on citation pills.
+  // Optional so older clients / playground events stay valid.
+  text_preview?: string;
 }
 
 export interface TraceChunk {

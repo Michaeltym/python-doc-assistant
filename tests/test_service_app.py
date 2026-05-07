@@ -275,6 +275,19 @@ def test_api_ask_includes_rewritten_query_field(client) -> None:
     assert "rewritten_query" in done_payloads[0]
 
 
+def test_api_ask_cited_chunks_carry_text_preview(client) -> None:
+    test_client, _ = client
+    resp = test_client.post("/api/ask", json={"query": "what is json.loads"})
+    done = [p for n, p in _parse_sse(resp.text) if n == "done"][0]
+    assert done["cited_chunks"], "expected at least one cited chunk in the fixture"
+    cited = done["cited_chunks"][0]
+    assert "text_preview" in cited
+    assert isinstance(cited["text_preview"], str)
+    # _preview collapses whitespace; result has no newlines or doubled spaces.
+    assert "\n" not in cited["text_preview"]
+    assert "  " not in cited["text_preview"]
+
+
 # ------------------------------------------------------------------
 # /api/ask validation
 # ------------------------------------------------------------------

@@ -221,6 +221,24 @@ def build_app(state: AskState) -> FastAPI:
 # ------------------------------------------------------------------
 
 
+_PREVIEW_MAX_CHARS = 280
+
+
+def _preview(text: str) -> str:
+    """Compact a chunk's body for the citation hover tooltip.
+
+    Collapses internal whitespace runs (chunk text often carries the
+    HTML's original line breaks + indentation) and truncates to
+    ``_PREVIEW_MAX_CHARS`` with an ellipsis. The result is small
+    enough to ship inside the SSE done payload without bloating the
+    transcript and short enough to fit in a popover.
+    """
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= _PREVIEW_MAX_CHARS:
+        return collapsed
+    return collapsed[: _PREVIEW_MAX_CHARS - 1].rstrip() + "…"
+
+
 async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dict[str, str]]:
     """Async generator yielding SSE event dicts for a single ask call.
 
@@ -295,6 +313,7 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
                     f"https://docs.python.org/{state.chunks_by_id[cid].docs_version}/"
                     f"{state.chunks_by_id[cid].canonical_url}"
                 ),
+                "text_preview": _preview(state.chunks_by_id[cid].text),
             }
             for cid in answer.cited_chunk_ids
             if cid in state.chunks_by_id
