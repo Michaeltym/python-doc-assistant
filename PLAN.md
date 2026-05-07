@@ -246,14 +246,18 @@ Schema example:
 
 ```json
 {
+  "query_id": "v0-001",
   "query": "Path vs os.path",
   "query_type": "comparison",
   "expected_symbols": ["pathlib.Path", "os.path"],
   "expected_urls": ["library/pathlib.html", "library/os.path.html"],
   "match_policy": "all",
+  "url_match": "strip_anchor",
   "notes": "multi-hop / comparison"
 }
 ```
+
+`query_id` is **required and globally unique** within the eval set (format `v0-NNN`). v1 human scoring and v2 LLM-as-judge join back on this id; query text alone is not a stable key (collides on punctuation / casing).
 
 `query_type` enum: `identifier` / `natural_language` / `comparison` / `howto` / `out_of_scope`
 

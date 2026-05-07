@@ -24,6 +24,38 @@
 
 ## Subtasks (in order)
 
+### 0. Eval set v0 (**ship first, before any code**)
+
+File: `eval_sets/v0_core.jsonl`
+
+This is the very first deliverable. It does not depend on any code in §1–§7, so it ships before ingest. Every later subtask is graded against this file, so locking the schema and the queries up front prevents downstream churn.
+
+- 30–50 queries, **hand-written**
+- Multi-answer + match_policy schema:
+
+```json
+{
+  "query_id": "v0-001",
+  "query": "Path vs os.path",
+  "query_type": "comparison",
+  "expected_symbols": ["pathlib.Path", "os.path"],
+  "expected_urls": ["library/pathlib.html", "library/os.path.html"],
+  "match_policy": "all",
+  "url_match": "strip_anchor",
+  "notes": "multi-hop / comparison"
+}
+```
+
+- `query_id` (**required**, globally unique within the eval set; format `v0-NNN` zero-padded). v1 human-scoring + LLM-as-judge join back to `per_query.jsonl` on this id, so it must be stable across re-runs and cannot be derived from the query text (queries can collide on punctuation / casing).
+- `query_type` enum: `identifier` / `natural_language` / `comparison` / `howto`
+- `match_policy` enum:
+  - `"any"` (default): a hit is recorded if any chunk in top-k matches any expected item
+  - `"all"` (default for comparison): top-k must cover every expected item
+- `url_match` field is optional, defaults to `"strip_anchor"`; enum `"exact"` / `"strip_anchor"` / `"prefix"` (see §8 URL matching rules)
+- Mix: 40% identifier / 50% natural language / 10% comparison
+
+**Acceptance criteria:** Valid JSON Lines, passes the validator script (schema-compliant + valid `match_policy` value + `query_id` non-empty and unique)
+
 ### 1. Ingest — download docs + record manifest
 
 File: `src/python_doc_assistant/ingest/fetch_docs.py`
@@ -105,6 +137,18 @@ Two chunk types:
 
 First run the `symbol_chunk` pass, recording the absorbed HTML nodes (`<dl class="py ...">` and their subtrees). Then run the `section_chunk` pass; during DFS, skip those nodes so they don't end up in the section text. Otherwise `pathlib.Path.read_text` would appear in both the symbol_chunk **and** the section_chunk that contains it, distorting BM25 scores and any downstream rerank.
 
+**Concrete tree-mutation procedure (locked in for v0):**
+
+1. **Clone the BeautifulSoup tree.** Do not mutate the tree the symbol pass walked. The section pass operates on a deep-copied soup so we can `decompose()` freely without affecting any other consumer.
+2. **Decompose absorbed nodes on the clone.** Every `<dl class="py method">` / `<dl class="py class">` / `<dl class="py function">` / `<dl class="py data">` / `<dl class="py attribute">` (etc.) that the symbol pass already turned into a `symbol_chunk` is removed from the clone via `node.decompose()`. The remaining tree is "section-only" residual content.
+3. **Split residual sections by `<section>` then h2/h3.** For each top-level `<section>` element, build one `section_chunk` per h2 (or h3 if no h2 split point is present). The chunk text is the cleaned residual prose under that heading.
+4. **Length cap: 1500 characters.** If a `section_chunk` exceeds 1500 chars after symbol-removal, split further along paragraph boundaries (`<p>`); each piece becomes its own chunk with a `:partN` suffix on the stable key (see below).
+5. **Empty-residual rule.** If a section has zero residual prose after `decompose()` (entirely consumed by symbol_chunks), it is skipped — no empty chunk written.
+
+**`section_chunk` stable key (so `chunk_id` collisions don't happen across pages with same heading text):**
+
+`section:<source_path-without-ext>#<anchor-or-h2-slug>` — for example `section:tutorial/datastructures#tut-tuples`. When a section has no native anchor, slugify the heading text (lowercase, ascii-only, hyphenated). On long-section split, append `:partN` (`:part1`, `:part2`, …) starting at part1.
+
 **Unified chunk schema (locked in for v0; downstream eval / debug / citation / rerank all depend on it):**
 
 ```json
@@ -173,18 +217,35 @@ File: `src/python_doc_assistant/indexes/bm25_index.py`
 **Analyzer rules (applied uniformly to both query and doc indexing; **order matters**):**
 
 1. Split on `.`: `pathlib.Path` → `pathlib`, `Path` (preserve original case)
-2. Split CamelCase: `fromKeys` → `from`, `Keys`; also keep the merged form `fromKeys`
+2. Split CamelCase + all-caps acronyms (see rule below); also keep the merged form (`fromKeys`, `HTTPServer`)
 3. Split underscores: `read_text` → `read`, `text`; also keep `read_text`
-4. **Finally** lowercase everything
-5. Drop empty tokens and pure punctuation
+4. **Preserve dunder methods specially:** `__init__` after underscore-split + empty-token drop is just `[init]`, which loses the "is dunder" signal. For tokens matching `__[a-z0-9]+__`, also keep the original token alongside the inner tokens.
+5. **Finally** lowercase everything
+6. Drop empty tokens and pure punctuation
+7. **Stopwords:** none in v0 (Python docs are technical English; stopword filtering has marginal impact and complicates analyzer testing)
+8. **BM25 parameters:** `rank_bm25.BM25Okapi` defaults — `k1=1.5`, `b=0.75`. Recorded in `config.toml` so future tuning is a config change, not a code change.
 
 > **Why lowercase must come after CamelCase splitting:** If you lowercase first, `fromKeys` becomes `fromkeys` and you can no longer recover the `from` / `Keys` boundary.
 
-**Examples:**
+**CamelCase + all-caps acronym rule:**
+
+A run of consecutive uppercase letters is treated as a single token, with a split at the boundary where the next character is lowercase. Digits are also split into their own token.
+
+| input | tokens (before lowercase) |
+|---|---|
+| `fromKeys` | `[from, Keys, fromKeys]` |
+| `HTTPServer` | `[HTTP, Server, HTTPServer]` |
+| `URLError` | `[URL, Error, URLError]` |
+| `HTTPSConnection` | `[HTTPS, Connection, HTTPSConnection]` |
+| `BZ2File` | `[BZ, 2, File, BZ2File]` |
+
+**Examples (final, post-lowercase):**
 
 - `pathlib.Path.read_text` → `[pathlib, path, read_text, read, text]`
 - `dict.fromKeys` → `[dict, fromkeys, from, keys]`
 - `os.path.join` → `[os, path, join]`
+- `http.server.HTTPServer` → `[http, server, httpserver, http, server]`
+- `__init__` → `[__init__, init]`
 - `how to iterate dict safely` → `[how, to, iterate, dict, safely]`
 
 **Why split this way?** Many Python docs queries are symbol-shaped (`Path.read_text`, `dict.fromKeys`). With plain English whitespace tokenization, BM25 can't match `read` or `keys` against the index at all, and recall tanks.
@@ -238,34 +299,7 @@ python-doc-assistant eval --set eval_sets/v0_core.jsonl --tag v0-bm25  [--docs-s
 
 **Acceptance criteria:** All 5 commands run end-to-end from a clean state; `eval` output's `results.json` contains the `docs_sha_short` field
 
-### 8. Eval set v0 (**finished before the code**)
-
-File: `eval_sets/v0_core.jsonl`
-
-- 30–50 queries, **hand-written**
-- Multi-answer + match_policy schema:
-
-```json
-{
-  "query": "Path vs os.path",
-  "query_type": "comparison",
-  "expected_symbols": ["pathlib.Path", "os.path"],
-  "expected_urls": ["library/pathlib.html", "library/os.path.html"],
-  "match_policy": "all",
-  "notes": "multi-hop / comparison"
-}
-```
-
-- `query_type` enum: `identifier` / `natural_language` / `comparison` / `howto`
-- `match_policy` enum:
-  - `"any"` (default): a hit is recorded if any chunk in top-k matches any expected item
-  - `"all"` (default for comparison): top-k must cover every expected item
-- `url_match` field is optional, defaults to `"strip_anchor"`; enum `"exact"` / `"strip_anchor"` / `"prefix"` (see §9 URL matching rules)
-- Mix: 40% identifier / 50% natural language / 10% comparison
-
-**Acceptance criteria:** Valid JSON Lines, passes the validator script (schema-compliant + valid `match_policy` value)
-
-### 9. Eval metrics + run writer
+### 8. Eval metrics + run writer
 
 Files:
 
@@ -299,7 +333,7 @@ Compute Recall@5, Recall@10, MRR.
 Run directory naming: `experiments/runs/<YYYY-MM-DDTHH-MM-SS>-<tag>/` (ISO 8601 timestamp to seconds + custom tag, e.g. `2026-04-25T14-30-00-v0-bm25`).
 
 - `results.json`: aggregate metrics + config + `DOCS_VERSION` + `docs_served_version` + `docs_sha_short` + `ingest_manifest` snapshot
-- `per_query.jsonl`: top-k chunks, scores, match_policy, and hit details for each query
+- `per_query.jsonl`: top-k chunks, scores, match_policy, and hit details for each query; **every row includes the source `query_id`** so downstream stages (v1 human scoring, v2 LLM-as-judge) can join back deterministically
 
 **Overwrite-protection:** `run_writer` refuses by default to write to an existing directory; overwriting requires explicit `--overwrite`. Timestamps go down to the second, so collisions are unlikely under normal circumstances; the edge case of two runs in the same second is covered by the `--overwrite` fallback.
 
@@ -315,7 +349,7 @@ python-doc-assistant eval --set eval_sets/v0_core.jsonl --tag v0-bm25
 - Both `any` and `all` policies are covered by unit tests
 - `results.json` round-trips cleanly back to a Python object
 
-### 10. Experiment narrative doc
+### 9. Experiment narrative doc
 
 File: `experiments/v0-bm25-only.md`
 
@@ -341,9 +375,6 @@ Half a page to a page, answering:
 ## Decisions to make during execution (I'll ask you)
 
 - Which docs branch to pin `DOCS_VERSION` to (`3.12` / `3.13` / ...)
-- HTML parsing details: how to split nested `<section>` elements on each module page
-- Maximum length for `section_chunk` (to prevent a whole page becoming one chunk)
 - Fuzzy matching threshold
 - Specific conditions for the query router heuristics
 - Which 30 starter symbols to include in the eval set
-- Whether CamelCase splitting handles all-caps acronyms specially (`HTTPServer` → `http`, `server` or letter by letter)
