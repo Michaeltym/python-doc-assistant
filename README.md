@@ -265,11 +265,18 @@ with, otherwise its token IDs decode to garbage.
 ```bash
 uv run --all-extras pdr serve \
     --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf \
-    --tinydocs-ckpt data/checkpoints/run-sft-v31/step_final.pt \
-    --tinydocs-tok data/tokenizer/tokenizer.json \
+    --tinydocs-ckpt data/checkpoints/run-sft-v32/step_final.pt \
+    --tinydocs-tok data/tokenizer/tokenizer-mix.json \
     --tinydocs-base-ckpt data/checkpoints/run-v31/step_final.pt \
     --tinydocs-base-tok data/tokenizer/tokenizer-mix.json
 ```
+
+The `run-sft-v32/` checkpoint above is the rebuilt SFT (16 epochs over
+the larger sft_corpus_v4 dataset, sharing the FineWeb mix tokenizer
+with the base ckpt to keep embedding alignment). It produces
+docstring-shaped continuations instead of the period-collapse the
+original `run-sft-v31` ckpt got stuck in. The original v31 ckpt is
+still on disk if you want to demo the failure mode side-by-side.
 
 The header dropdown gains two entries — "TinyDocs v3.1 SFT" and
 "TinyDocs v3.1 base" — alongside Qwen. Each model has its own
@@ -279,10 +286,10 @@ just want the SFT variant; omit both flags entirely to skip TinyDocs.
 
 The Playground tab is the right place to compare these three:
 
-| prompt | Qwen 7B | TinyDocs base | TinyDocs SFT |
+| prompt | Qwen 7B | TinyDocs base | TinyDocs SFT (v32) |
 |---|---|---|---|
-| `Once upon a time` | coherent short story | "the world was in a state of chaos…" (cycles) | period-collapse / Python-token salad |
-| `def read_text(path):` | full Python function | mostly word-salad | Python-shaped token salad |
+| `Once upon a time` | coherent short story | "the world was in a state of chaos…" (cycles) | "the world was full of people…" (cycles, FineWeb style preserved) |
+| `pathlib.Path.read_text` | real signature + body | mostly word-salad | "(path=None, **kwargs) read-only. The return value is a file-like object containing the text of the file…" — plausible-looking docstring (facts hallucinated) |
 
 `<unk>` tokens are masked out of the greedy decode so neither v3.1
 ckpt locks into a UNK loop, but the underlying 67 M scaling plateau
