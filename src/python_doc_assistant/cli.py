@@ -926,16 +926,29 @@ def eval_cmd(
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help=(
-        "Optional TinyDocs (v3.1) checkpoint path. When provided together with "
-        "--tinydocs-tok, the server registers a second selectable model under the id "
-        "'tinydocs' and the UI grows a model picker."
+        "TinyDocs SFT checkpoint path (e.g. data/checkpoints/run-sft-v31/step_final.pt). "
+        "Registered under id 'tinydocs' when set together with --tinydocs-tok."
+    ),
+)
+@click.option(
+    "--tinydocs-base-ckpt",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "TinyDocs pre-SFT checkpoint path (FineWeb pretrain only, e.g. "
+        "data/checkpoints/run-v31/step_120000.pt). Registered under id "
+        "'tinydocs-base' when set together with --tinydocs-tok. Useful for "
+        "demoing FineWeb base behaviour vs. the Python-SFT variant."
     ),
 )
 @click.option(
     "--tinydocs-tok",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
-    help="TinyDocs tokenizer JSON path. Required when --tinydocs-ckpt is set.",
+    help=(
+        "TinyDocs tokenizer JSON path. Required when --tinydocs-ckpt or "
+        "--tinydocs-base-ckpt is set; the same tokenizer trains both."
+    ),
 )
 def serve_cmd(
     gguf_model_path: Path,
@@ -951,6 +964,7 @@ def serve_cmd(
     port: int,
     frontend_dist: Path,
     tinydocs_ckpt: Path | None,
+    tinydocs_base_ckpt: Path | None,
     tinydocs_tok: Path | None,
 ) -> None:
     """Start an HTTP server exposing /api/ask + /health + the web UI.
@@ -1043,8 +1057,16 @@ def serve_cmd(
 
     if hyde and retriever != "dense":
         raise click.UsageError("--hyde requires --retriever=dense")
-    if (tinydocs_ckpt is None) != (tinydocs_tok is None):
-        raise click.UsageError("--tinydocs-ckpt and --tinydocs-tok must be set together")
+    wants_tinydocs = tinydocs_ckpt is not None or tinydocs_base_ckpt is not None
+    if wants_tinydocs and tinydocs_tok is None:
+        raise click.UsageError(
+            "--tinydocs-tok is required when any TinyDocs checkpoint is provided"
+        )
+    if tinydocs_tok is not None and not wants_tinydocs:
+        raise click.UsageError(
+            "--tinydocs-tok set but no TinyDocs checkpoint (--tinydocs-ckpt / "
+            "--tinydocs-base-ckpt) provided"
+        )
 
     eff_version = _resolve_docs_version(version)
     eff_sha = _resolve_docs_sha(eff_version, docs_sha)
@@ -1097,21 +1119,40 @@ def serve_cmd(
         )
     }
 
-    if tinydocs_ckpt is not None and tinydocs_tok is not None:
+    if wants_tinydocs:
         from python_doc_assistant.generation.tinydocs_backend import TinyDocsGenerator
 
-        click.echo(f"loading tinydocs generator: {tinydocs_ckpt.name}")
-        td_gen = TinyDocsGenerator(
-            checkpoint_path=tinydocs_ckpt,
-            tokenizer_path=tinydocs_tok,
-        )
-        models["tinydocs"] = ModelEntry(
-            generator=td_gen,
-            lock=asyncio.Lock(),
-            label="TinyDocs v3.1",
-            description="67 M params · fast but lossy · grounded RAG comparison backend",
-            max_seq_len=td_gen.model_max_seq_len,
-        )
+        assert tinydocs_tok is not None  # checked above
+        if tinydocs_ckpt is not None:
+            click.echo(f"loading tinydocs (sft) generator: {tinydocs_ckpt.name}")
+            sft_gen = TinyDocsGenerator(
+                checkpoint_path=tinydocs_ckpt,
+                tokenizer_path=tinydocs_tok,
+            )
+            models["tinydocs"] = ModelEntry(
+                generator=sft_gen,
+                lock=asyncio.Lock(),
+                label="TinyDocs v3.1 SFT",
+                description=(
+                    "67 M · FineWeb pretrain + Python docs SFT · grounded RAG comparison"
+                ),
+                max_seq_len=sft_gen.model_max_seq_len,
+            )
+        if tinydocs_base_ckpt is not None:
+            click.echo(f"loading tinydocs (base) generator: {tinydocs_base_ckpt.name}")
+            base_gen = TinyDocsGenerator(
+                checkpoint_path=tinydocs_base_ckpt,
+                tokenizer_path=tinydocs_tok,
+            )
+            models["tinydocs-base"] = ModelEntry(
+                generator=base_gen,
+                lock=asyncio.Lock(),
+                label="TinyDocs v3.1 base",
+                description=(
+                    "67 M · FineWeb pretrain only · general-English continuations"
+                ),
+                max_seq_len=base_gen.model_max_seq_len,
+            )
 
     static_root = frontend_dist if frontend_dist.is_dir() else None
     state = AskState(
