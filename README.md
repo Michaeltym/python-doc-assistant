@@ -250,22 +250,44 @@ auto-mounts `frontend/dist/` at `/` when the directory exists.
 | `GET` | `/health` | Liveness check, `{"status": "ok"}`. |
 | `GET` | `/` | Static React UI when `frontend/dist/` is mounted. |
 
-**Optional second model — TinyDocs v3.1 demo backend:**
+**Optional demo models — TinyDocs v3.1 (base + SFT):**
 
-`pdr serve` accepts a v3.1 TinyDocs checkpoint to register as a second
-selectable model. Useful for showing off the hand-written 67 M model
-side-by-side with the Qwen 7B production backend in the chat UI.
+`pdr serve` accepts up to two v3.1 TinyDocs checkpoints (`base` =
+FineWeb pretrain only, `SFT` = base + Python docs fine-tune) so the
+hand-written 67 M model can be demoed side-by-side with the Qwen 7B
+production backend.
+
+The two v3.1 ckpts were trained with **different tokenizers** —
+`tokenizer-mix.json` for the FineWeb pretrain, `tokenizer.json` for
+the Python-docs SFT — so each ckpt needs the tokenizer it was trained
+with, otherwise its token IDs decode to garbage.
 
 ```bash
 uv run --all-extras pdr serve \
     --gguf-model data/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf \
     --tinydocs-ckpt data/checkpoints/run-sft-v31/step_final.pt \
-    --tinydocs-tok data/tokenizer/tokenizer.json
+    --tinydocs-tok data/tokenizer/tokenizer.json \
+    --tinydocs-base-ckpt data/checkpoints/run-v31/step_final.pt \
+    --tinydocs-base-tok data/tokenizer/tokenizer-mix.json
 ```
 
-The header dropdown gains a "TinyDocs v3.1" entry; switching to it
-routes new queries to the smaller model. Each model has its own lock
-so a slow Qwen call does not block a fast TinyDocs call.
+The header dropdown gains two entries — "TinyDocs v3.1 SFT" and
+"TinyDocs v3.1 base" — alongside Qwen. Each model has its own
+`asyncio.Lock`, so a slow Qwen call does not block a fast TinyDocs
+call. Pass only `--tinydocs-ckpt` (with `--tinydocs-tok`) when you
+just want the SFT variant; omit both flags entirely to skip TinyDocs.
+
+The Playground tab is the right place to compare these three:
+
+| prompt | Qwen 7B | TinyDocs base | TinyDocs SFT |
+|---|---|---|---|
+| `Once upon a time` | coherent short story | "the world was in a state of chaos…" (cycles) | period-collapse / Python-token salad |
+| `def read_text(path):` | full Python function | mostly word-salad | Python-shaped token salad |
+
+`<unk>` tokens are masked out of the greedy decode so neither v3.1
+ckpt locks into a UNK loop, but the underlying 67 M scaling plateau
+still bounds output quality — the demo is honest about what 67 M
+can and cannot do.
 
 **Use as an MCP tool (Claude Code / Codex CLI / Claude Desktop):**
 
