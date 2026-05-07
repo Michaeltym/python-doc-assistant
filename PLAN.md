@@ -26,8 +26,6 @@ Qwen2.5 serves as the default baseline; a homegrown tiny LLM is an optional lear
 
 ## 4. Repository and Environment
 
-**Suggested path:** `/Users/michaeltan/Desktop/training/python-doc-assistant/`
-
 **Python and dependency management (industry-standard)**
 
 - Python 3.11+, with `.python-version` locking the version

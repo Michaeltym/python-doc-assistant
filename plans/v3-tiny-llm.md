@@ -145,20 +145,6 @@ Under the practical constraints of 2 weeks + local MPS, the MVP bar is set at **
 
 **Generation quality is never used as a pass criterion.** If MVP passes, v3 passes; stretch goals are completed as far as time allows.
 
-## Decision points to make during execution (I will ask you)
-
-**MVP stage:**
-
-- Choose parameter count: 50M / 100M / larger (depends on what MPS can fit)
-- Keep tokenizer Option A (reuse Qwen) or take the risk of trying B (train BPE from scratch)
-
-**Stretch goal stage (only decided if time remains after MVP):**
-
-- Whether to switch to cloud GPU (Modal / Lambda / RunPod, calculate the budget)
-- Whether to revisit the general-text data mix (FineWeb-Edu or similar) — deferred at MVP per §3
-- SFT data distill source (Qwen vs Claude, compliance + quality tradeoff)
-- When the 2 weeks are up, "stop" stretch goals; do not drag down the main project
-
 ---
 
 ## Why v3.1 was opened post-MVP

@@ -1,16 +1,16 @@
-# v4 — production-track accuracy (Qwen-only path), in progress
+# v4 — production-track accuracy (Qwen-only path)
 
 Active spec: `plans/v4-prod-ready.md` Revision 2026-05-05 — Qwen-only path.
 
-This narrative documents work-in-progress on the v4 lift from the v2
-baseline. Distinct from v3 / v3.1 (research side track), v4 stays on
+This narrative documents the v4 lift from the v2 baseline. Distinct from v3 / v3.1 (research side track), v4 stays on
 the canonical pipeline (`pdr eval` + LLM-as-judge) and measures
 quantitative accuracy / hallucination / refusal rates.
 
 The Claude-path version of v4 was scoped at `accuracy ≥ 0.90`.
 The Qwen-only revision targets `accuracy ≥ 0.78` on the same eval set
-(`eval_sets/v2_full.jsonl`, n=111). We are documenting Week 0 + Week 1
-checkpoints below; the doc will be updated as further sub-tasks land.
+(`eval_sets/v2_full.jsonl`, n=111). All Week 0 → Week 3 sub-tasks
+landed; the final pipeline (Codex re-judged) closes at accuracy
+**0.874**.
 
 ## Status
 

@@ -63,7 +63,7 @@ Key invariants:
 ## 2. How an answer is produced
 
 ```mermaid
-flowchart LR
+flowchart TB
   Q[user query] --> CLS[router.classify]
   CLS -->|identifier| RAW[query as-is]
   CLS -->|NL / how-to / comparison| HYDE[HyDE: LLM writes a<br/>hypothetical doc passage]:::retrieve
@@ -207,7 +207,7 @@ Parameter budget at vocab=32000, hidden=512, layers=12, heads=8:
 ## 4. TinyDocs end-to-end flow (tokenizer → generator)
 
 ```mermaid
-flowchart LR
+flowchart TB
   Q[query text] --> TOK[Tokenizer<br/>BPE 32k vocab<br/>tokenizer.json]
   TOK --> IDS[token ids<br/>B × T]
   IDS --> EMB[TinyDocsModel<br/>embedding lookup]
