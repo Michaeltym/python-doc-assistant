@@ -235,8 +235,10 @@ Stage notes:
 4. **Final RMSNorm + tied output projection.** Produces logits over
    the vocab for every position. Only the last position is needed
    for next-token sampling.
-5. **Sample.** Greedy by default in v3.1 SFT (temperature 0 →
-   `argmax`).
+5. **Sample.** Greedy by default in v3.x SFT (temperature 0 →
+   `argmax`). UNK token id is masked to `-inf` before `argmax` to
+   avoid a 67M-class lock loop (model otherwise collapses to
+   predicting `<unk>` indefinitely).
 6. **Append + reuse KV cache.** New token is fed back as a single
    position; the existing KV cache means the rest of the model only
    processes that one new step. Repeat until EOS or `max_new_tokens`.
@@ -282,5 +284,8 @@ calling convention as Qwen GGUF.
 | v4 | **React + Vite + Tailwind** chat UI | Frontend chat with streaming, citation pills, model picker | The "production-ready single-developer tool" deliverable |
 | v4 | **MCP server** (FastMCP, Streamable HTTP) | `/mcp/mcp` exposes the `ask` tool to Claude Code / Codex CLI / Claude Desktop (via mcp-remote) | This RAG stack becomes a tool inside any MCP-aware client |
 | v4 | Multi-model `AskState` | Per-model `asyncio.Lock`; UI dropdown + MCP `model` arg pick which generator answers | Demoes Qwen 7B vs hand-written 67M side-by-side without restarting the server |
+| v4 | Playground UI tab | Free-form `generate_raw` completion (no retrieval, no grounding) | Shows the small model alone produces nonsense — proves RAG is what makes it usable |
+| v4 | TinyDocs v3.2 SFT retrain | Same tokenizer as the base ckpt (mix vocab) + 565-row SFT corpus × 16 epochs | v3.1 SFT had a tokenizer mismatch (mix base → python-only SFT) → period collapse; v3.2 lands docstring-shaped output |
+| v4 | 4-model demo dropdown | `pdr serve` registers Qwen 7B + TinyDocs v3.2 / base / v3.1-legacy | Direct A/B in the UI: capacity-class vs hand-written, before/after SFT, broken vs fixed SFT |
 
 End-of-summary.
