@@ -222,12 +222,23 @@ class TinyDocsGenerator(Generator):
         """
         import torch
 
+        # Mask the UNK token logit so greedy argmax never picks <unk>.
+        # 67 M base / SFT-light checkpoints often degenerate to a UNK
+        # loop (top-1 token = <unk>; once emitted, the model keeps
+        # picking it). The 2nd-best token is usually still a token-salad
+        # symbol but at least it is not <unk> repeated forever.
+        unk_id = self.tokenizer.unk_id
+
+        def _argmax_skip_unk(step_logits: Any) -> Any:
+            step_logits[:, unk_id] = float("-inf")
+            return step_logits.argmax(dim=-1)
+
         with torch.no_grad():
             input_tensor = torch.tensor(input_ids, dtype=torch.long, device=self.device).unsqueeze(
                 0
             )
             logits, caches = self.model(input_tensor)
-            next_token = logits[:, -1, :].argmax(dim=-1)
+            next_token = _argmax_skip_unk(logits[:, -1, :])
             if next_token.item() == self.tokenizer.eos_id:
                 return []
             generated = [next_token.item()]
@@ -235,7 +246,7 @@ class TinyDocsGenerator(Generator):
                 logits, caches = self.model(
                     next_token[:, None], caches=caches, position=position + len(input_ids)
                 )
-                next_token = logits[:, -1, :].argmax(dim=-1)
+                next_token = _argmax_skip_unk(logits[:, -1, :])
                 if next_token.item() == self.tokenizer.eos_id:
                     break
                 generated.append(next_token.item())

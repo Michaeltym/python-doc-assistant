@@ -946,8 +946,22 @@ def eval_cmd(
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
     help=(
-        "TinyDocs tokenizer JSON path. Required when --tinydocs-ckpt or "
-        "--tinydocs-base-ckpt is set; the same tokenizer trains both."
+        "Default TinyDocs tokenizer JSON. Used by both checkpoints unless "
+        "--tinydocs-base-tok is also set. The base + SFT v3.1 ckpts were "
+        "trained with DIFFERENT tokenizers (mix vs python-only) — pass a "
+        "separate --tinydocs-base-tok if that is your case."
+    ),
+)
+@click.option(
+    "--tinydocs-base-tok",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Optional override tokenizer for the BASE checkpoint. v3.1 base "
+        "was pretrained with `tokenizer-mix.json` (FineWeb mix); SFT was "
+        "fine-tuned with `tokenizer.json` (Python-only). Without this "
+        "override the base ckpt's outputs decode to garbage because IDs "
+        "no longer match the vocab. When unset, --tinydocs-tok is reused."
     ),
 )
 def serve_cmd(
@@ -966,6 +980,7 @@ def serve_cmd(
     tinydocs_ckpt: Path | None,
     tinydocs_base_ckpt: Path | None,
     tinydocs_tok: Path | None,
+    tinydocs_base_tok: Path | None,
 ) -> None:
     """Start an HTTP server exposing /api/ask + /health + the web UI.
 
@@ -1139,10 +1154,14 @@ def serve_cmd(
                 max_seq_len=sft_gen.model_max_seq_len,
             )
         if tinydocs_base_ckpt is not None:
-            click.echo(f"loading tinydocs (base) generator: {tinydocs_base_ckpt.name}")
+            base_tok_path = tinydocs_base_tok if tinydocs_base_tok is not None else tinydocs_tok
+            click.echo(
+                f"loading tinydocs (base) generator: {tinydocs_base_ckpt.name} "
+                f"(tok: {base_tok_path.name})"
+            )
             base_gen = TinyDocsGenerator(
                 checkpoint_path=tinydocs_base_ckpt,
-                tokenizer_path=tinydocs_tok,
+                tokenizer_path=base_tok_path,
             )
             models["tinydocs-base"] = ModelEntry(
                 generator=base_gen,
