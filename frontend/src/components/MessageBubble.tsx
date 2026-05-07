@@ -5,9 +5,11 @@ import remarkGfm from "remark-gfm";
 import { remarkCiteMarker } from "../lib/remarkCiteMarker";
 import type { Message } from "../types";
 import { Citation } from "./Citation";
+import { TraceDetails } from "./TraceDetails";
 
 interface MessageBubbleProps {
   message: Message;
+  userQuery?: string;
 }
 
 function StreamingDots() {
@@ -41,7 +43,7 @@ function RefusalMessage() {
   );
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, userQuery }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -129,6 +131,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                 </span>
               )}
             </div>
+          )}
+
+          {/* Pipeline trace — collapsed by default. */}
+          {message.meta && !errored && (
+            <TraceDetails meta={message.meta} query={userQuery ?? ""} />
           )}
         </div>
       </div>

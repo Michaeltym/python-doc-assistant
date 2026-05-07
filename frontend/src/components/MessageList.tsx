@@ -60,9 +60,11 @@ export function MessageList({ messages, onPickSuggestion }: MessageListProps) {
 
   return (
     <div className="flex flex-col gap-5 py-6">
-      {messages.map((m) => (
-        <MessageBubble key={m.id} message={m} />
-      ))}
+      {messages.map((m, idx) => {
+        const prev = idx > 0 ? messages[idx - 1] : null;
+        const userQuery = m.role === "assistant" && prev?.role === "user" ? prev.text : undefined;
+        return <MessageBubble key={m.id} message={m} userQuery={userQuery} />;
+      })}
       <div ref={bottomRef} />
     </div>
   );

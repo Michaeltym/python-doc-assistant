@@ -15,12 +15,25 @@ export interface CitedChunk {
   url: string;
 }
 
+export interface TraceChunk {
+  chunk_id: string;
+  rank: number;
+  score: number;
+  title: string;
+  url: string;
+  cited: boolean;
+}
+
 export interface DonePayload {
   refused: boolean;
   cited_chunks: CitedChunk[];
   latency_seconds: number;
   rewritten_query: string | null;
   model: string | null;
+  // Trace fields — present on /api/ask responses, absent (or empty)
+  // on /api/playground (no retrieval).
+  query_type?: string | null;
+  retrieved?: TraceChunk[];
 }
 
 export interface ModelInfo {

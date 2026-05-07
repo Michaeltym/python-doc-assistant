@@ -50,6 +50,8 @@ def done_event(
     latency_seconds: float,
     rewritten_query: str | None = None,
     model: str | None = None,
+    query_type: str | None = None,
+    retrieved: tuple[dict[str, object], ...] = (),
 ) -> dict[str, str]:
     """Build the terminal SSE event with metadata.
 
@@ -64,11 +66,20 @@ def done_event(
         model: id of the model that produced the answer (e.g.
             "qwen-7b-gguf" or "tinydocs"). The frontend uses this for
             the "answered by" footer chip.
+        query_type: router classification (``identifier`` /
+            ``natural_language``). Surfaced in the trace panel so the
+            user can see which retrieval path the query took.
+        retrieved: tuple of ``{"chunk_id", "rank", "score", "title",
+            "url", "cited"}`` dicts — every chunk the retriever
+            returned, in rank order, with a ``cited`` flag marking
+            whichever subset the generator referenced. Lets the trace
+            panel show the full retrieve-then-cite funnel without an
+            extra round trip.
 
     Returns:
         ``{"event": "done", "data": "<json>"}`` where the JSON payload
         contains ``refused``, ``cited_chunks``, ``latency_seconds``,
-        ``rewritten_query``, and ``model``.
+        ``rewritten_query``, ``model``, ``query_type``, ``retrieved``.
     """
     return {
         "event": EVENT_DONE,
@@ -79,6 +90,8 @@ def done_event(
                 "latency_seconds": latency_seconds,
                 "rewritten_query": rewritten_query,
                 "model": model,
+                "query_type": query_type,
+                "retrieved": list(retrieved),
             }
         ),
     }

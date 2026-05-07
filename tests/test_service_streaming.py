@@ -109,6 +109,46 @@ def test_done_event_refused_true_zero_citations() -> None:
     assert payload["cited_chunks"] == []
 
 
+def test_done_event_carries_trace_fields() -> None:
+    ev = done_event(
+        refused=False,
+        cited_chunks=(),
+        latency_seconds=0.5,
+        query_type="identifier",
+        retrieved=(
+            {
+                "chunk_id": "symbol:json.loads",
+                "rank": 1,
+                "score": 12.5,
+                "title": "json.loads",
+                "url": "https://docs.python.org/3.12/library/json.html#json.loads",
+                "cited": True,
+            },
+            {
+                "chunk_id": "symbol:json.dumps",
+                "rank": 2,
+                "score": 9.3,
+                "title": "json.dumps",
+                "url": "https://docs.python.org/3.12/library/json.html#json.dumps",
+                "cited": False,
+            },
+        ),
+    )
+    payload = json.loads(ev["data"])
+    assert payload["query_type"] == "identifier"
+    assert len(payload["retrieved"]) == 2
+    assert payload["retrieved"][0]["cited"] is True
+    assert payload["retrieved"][1]["cited"] is False
+    assert payload["retrieved"][0]["rank"] == 1
+
+
+def test_done_event_trace_fields_default_to_empty() -> None:
+    ev = done_event(refused=False, cited_chunks=(), latency_seconds=0.1)
+    payload = json.loads(ev["data"])
+    assert payload["query_type"] is None
+    assert payload["retrieved"] == []
+
+
 # ------------------------------------------------------------------
 # error_event
 # ------------------------------------------------------------------

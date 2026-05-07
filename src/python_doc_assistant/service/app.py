@@ -299,6 +299,27 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             for cid in answer.cited_chunk_ids
             if cid in state.chunks_by_id
         )
+        cited_ids = set(answer.cited_chunk_ids)
+        retrieved_payload: tuple[dict[str, object], ...] = tuple(
+            {
+                "chunk_id": r.chunk_id,
+                "rank": r.rank,
+                "score": r.score,
+                "title": (
+                    state.chunks_by_id[r.chunk_id].title
+                    if r.chunk_id in state.chunks_by_id
+                    else r.chunk_id
+                ),
+                "url": (
+                    f"https://docs.python.org/{state.chunks_by_id[r.chunk_id].docs_version}/"
+                    f"{state.chunks_by_id[r.chunk_id].canonical_url}"
+                    if r.chunk_id in state.chunks_by_id
+                    else r.canonical_url
+                ),
+                "cited": r.chunk_id in cited_ids,
+            }
+            for r in retrieved
+        )
         yield token_event(answer.text or "[INSUFFICIENT-CONTEXT]")
         yield done_event(
             refused=answer.refused,
@@ -306,4 +327,6 @@ async def _ask_stream(state: AskState, request: AskRequest) -> AsyncIterator[dic
             latency_seconds=time.perf_counter() - start,
             rewritten_query=rewritten if rewritten != request.query else None,
             model=model_id,
+            query_type=qt.value,
+            retrieved=retrieved_payload,
         )
