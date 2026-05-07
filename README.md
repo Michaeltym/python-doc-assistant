@@ -268,15 +268,29 @@ uv run --all-extras pdr serve \
     --tinydocs-ckpt data/checkpoints/run-sft-v32/step_final.pt \
     --tinydocs-tok data/tokenizer/tokenizer-mix.json \
     --tinydocs-base-ckpt data/checkpoints/run-v31/step_final.pt \
-    --tinydocs-base-tok data/tokenizer/tokenizer-mix.json
+    --tinydocs-base-tok data/tokenizer/tokenizer-mix.json \
+    --tinydocs-v31-ckpt data/checkpoints/run-sft-v31/step_final.pt \
+    --tinydocs-v31-tok data/tokenizer/tokenizer.json
 ```
 
-The `run-sft-v32/` checkpoint above is the rebuilt SFT (16 epochs over
-the larger sft_corpus_v4 dataset, sharing the FineWeb mix tokenizer
-with the base ckpt to keep embedding alignment). It produces
-docstring-shaped continuations instead of the period-collapse the
-original `run-sft-v31` ckpt got stuck in. The original v31 ckpt is
-still on disk if you want to demo the failure mode side-by-side.
+The header dropdown then exposes four models:
+
+| id | label | what it shows |
+|---|---|---|
+| `qwen-7b-gguf` | Qwen 7B Q4 GGUF | the production stack |
+| `tinydocs` | TinyDocs v3.2 SFT | proper SFT — docstring-shaped output |
+| `tinydocs-base` | TinyDocs v3.1 base | FineWeb pretrain only — narrative loops |
+| `tinydocs-sft-v31` | TinyDocs v3.1 SFT (legacy) | broken SFT — period collapse / token salad |
+
+The v3.2 ckpt is the rebuilt SFT (16 epochs over the larger
+sft_corpus_v4 dataset, sharing the FineWeb mix tokenizer with the
+base ckpt to keep embedding alignment). The v3.1 SFT ckpt is kept
+loaded so you can switch between v3.1 and v3.2 in the dropdown and
+see the before-and-after of fixing the SFT recipe.
+
+To skip TinyDocs entirely, omit all `--tinydocs-*` flags. Loading
+just one of base / v32-SFT / v31-SFT also works — the dropdown only
+shows what was actually loaded.
 
 The header dropdown gains two entries — "TinyDocs v3.1 SFT" and
 "TinyDocs v3.1 base" — alongside Qwen. Each model has its own

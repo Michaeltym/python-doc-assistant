@@ -964,6 +964,30 @@ def eval_cmd(
         "no longer match the vocab. When unset, --tinydocs-tok is reused."
     ),
 )
+@click.option(
+    "--tinydocs-v31-ckpt",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Legacy v3.1 SFT checkpoint (period-collapse / token-salad demo). "
+        "Registered under id 'tinydocs-sft-v31'. Useful for the "
+        "before-and-after demo against the proper v3.2 SFT — load both "
+        "and switch in the dropdown."
+    ),
+)
+@click.option(
+    "--tinydocs-v31-tok",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Tokenizer override for the legacy v3.1 SFT checkpoint. The v3.1 "
+        "SFT was trained with `tokenizer.json` (python-only) — DIFFERENT "
+        "from the base + v3.2 SFT (mix). Without this override, the "
+        "v3.1 ckpt decodes to garbage. When unset, falls back to "
+        "`data/tokenizer/tokenizer.json` if --tinydocs-tok is not set "
+        "to that path already."
+    ),
+)
 def serve_cmd(
     gguf_model_path: Path,
     version: str | None,
@@ -981,6 +1005,8 @@ def serve_cmd(
     tinydocs_base_ckpt: Path | None,
     tinydocs_tok: Path | None,
     tinydocs_base_tok: Path | None,
+    tinydocs_v31_ckpt: Path | None,
+    tinydocs_v31_tok: Path | None,
 ) -> None:
     """Start an HTTP server exposing /api/ask + /health + the web UI.
 
@@ -1072,7 +1098,11 @@ def serve_cmd(
 
     if hyde and retriever != "dense":
         raise click.UsageError("--hyde requires --retriever=dense")
-    wants_tinydocs = tinydocs_ckpt is not None or tinydocs_base_ckpt is not None
+    wants_tinydocs = (
+        tinydocs_ckpt is not None
+        or tinydocs_base_ckpt is not None
+        or tinydocs_v31_ckpt is not None
+    )
     if wants_tinydocs and tinydocs_tok is None:
         raise click.UsageError(
             "--tinydocs-tok is required when any TinyDocs checkpoint is provided"
@@ -1080,7 +1110,7 @@ def serve_cmd(
     if tinydocs_tok is not None and not wants_tinydocs:
         raise click.UsageError(
             "--tinydocs-tok set but no TinyDocs checkpoint (--tinydocs-ckpt / "
-            "--tinydocs-base-ckpt) provided"
+            "--tinydocs-base-ckpt / --tinydocs-v31-ckpt) provided"
         )
 
     eff_version = _resolve_docs_version(version)
@@ -1139,7 +1169,7 @@ def serve_cmd(
 
         assert tinydocs_tok is not None  # checked above
         if tinydocs_ckpt is not None:
-            click.echo(f"loading tinydocs (sft) generator: {tinydocs_ckpt.name}")
+            click.echo(f"loading tinydocs (sft v3.2) generator: {tinydocs_ckpt.name}")
             sft_gen = TinyDocsGenerator(
                 checkpoint_path=tinydocs_ckpt,
                 tokenizer_path=tinydocs_tok,
@@ -1147,11 +1177,35 @@ def serve_cmd(
             models["tinydocs"] = ModelEntry(
                 generator=sft_gen,
                 lock=asyncio.Lock(),
-                label="TinyDocs v3.1 SFT",
+                label="TinyDocs v3.2 SFT",
                 description=(
-                    "67 M · FineWeb pretrain + Python docs SFT · grounded RAG comparison"
+                    "67 M · FineWeb pretrain + 16-epoch SFT · docstring-shaped output"
                 ),
                 max_seq_len=sft_gen.model_max_seq_len,
+            )
+
+        if tinydocs_v31_ckpt is not None:
+            v31_tok_path = (
+                tinydocs_v31_tok
+                if tinydocs_v31_tok is not None
+                else Path("data/tokenizer/tokenizer.json")
+            )
+            click.echo(
+                f"loading tinydocs (sft v3.1 legacy) generator: {tinydocs_v31_ckpt.name} "
+                f"(tok: {v31_tok_path.name})"
+            )
+            v31_gen = TinyDocsGenerator(
+                checkpoint_path=tinydocs_v31_ckpt,
+                tokenizer_path=v31_tok_path,
+            )
+            models["tinydocs-sft-v31"] = ModelEntry(
+                generator=v31_gen,
+                lock=asyncio.Lock(),
+                label="TinyDocs v3.1 SFT (legacy)",
+                description=(
+                    "67 M · v3.1 SFT (broken: tokenizer mismatch + 3 epochs) · period collapse"
+                ),
+                max_seq_len=v31_gen.model_max_seq_len,
             )
         if tinydocs_base_ckpt is not None:
             base_tok_path = tinydocs_base_tok if tinydocs_base_tok is not None else tinydocs_tok
